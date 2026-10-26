@@ -11,6 +11,7 @@ import {
   startOfWeek,
 } from 'date-fns';
 import {
+  BriefcaseBusiness,
   CalendarOff,
   CircleAlert,
   CircleCheck,
@@ -28,7 +29,7 @@ import {
 import { useEffect, useRef, useState, type CSSProperties, type MouseEvent, type Ref } from 'react';
 import { accountLabel, needsPayment, useAccounts, type Account } from '../data/billing';
 import { isTrial, lessonValue } from '../data/money';
-import { DAY_OFF_KINDS, dayOffLabel } from '../data/constants';
+import { dayOffLabel } from '../data/constants';
 import { dayOffOn, lessonColor, lessonsByDay, lessonTitle, liveLessons, useDaysOff } from '../data/selectors';
 import { summarize } from '../data/stats';
 import { useData } from '../data/store';
@@ -303,13 +304,57 @@ function DayView({ day, byDay, now }: { day: string; byDay: Map<string, Lesson[]
   );
 }
 
-function MonthOff({ kind }: { kind: DayOff['kind'] }) {
-  const Icon = DAY_OFF_ICONS[kind];
+/**
+ * What a calendar day was: a normal working day, a day off, a day off she still
+ * worked on, or a day marked as sick leave / vacation / holiday…
+ */
+type DayKind = 'work' | 'rest' | 'restWorked' | DayOff['kind'];
+
+function dayKindOf(day: Date, lessons: Lesson[], off: DayOff | undefined, workDays: number[]): DayKind {
+  if (off) return off.kind;
+  const worked = lessons.some((l) => l.status !== 'cancelled');
+  if (workDays.includes(isoWeekday(day))) return 'work';
+  return worked ? 'restWorked' : 'rest';
+}
+
+const DAY_KIND_LABEL: Record<Exclude<DayKind, 'work'>, string> = {
+  rest: 'вихідний',
+  restWorked: 'уроки у вихідний',
+  dayoff: 'вихідний (позначений)',
+  vacation: 'відпустка',
+  sick: 'лікарняний',
+  holiday: 'свято',
+  break: 'канікули',
+  other: 'інше',
+};
+
+function DayMark({ kind }: { kind: DayKind }) {
+  if (kind === 'work' || kind === 'rest') return null;
+  const Icon = kind === 'restWorked' ? BriefcaseBusiness : DAY_OFF_ICONS[kind];
   return (
-    <span className="mg-off" title={dayOffLabel(kind)}>
-      <Icon size={13} />
-      <span className="mg-off-text">{DAY_OFF_KINDS.find((x) => x.value === kind)?.short}</span>
+    <span className="mg-mark" title={DAY_KIND_LABEL[kind]}>
+      <Icon size={13} strokeWidth={2.3} />
     </span>
+  );
+}
+
+/** Explains the markers that actually appear this month — nothing more. */
+function MonthLegend({ kinds }: { kinds: Set<DayKind> }) {
+  const order: Exclude<DayKind, 'work'>[] = ['rest', 'restWorked', 'sick', 'vacation', 'holiday', 'break', 'dayoff', 'other'];
+  const shown = order.filter((k) => kinds.has(k));
+  if (shown.length === 0) return null;
+  return (
+    <div className="month-legend">
+      {shown.map((k) => {
+        const Icon = k === 'rest' ? null : k === 'restWorked' ? BriefcaseBusiness : DAY_OFF_ICONS[k];
+        return (
+          <span key={k} data-kind={k}>
+            {Icon ? <Icon size={13} strokeWidth={2.3} /> : <i />}
+            {DAY_KIND_LABEL[k]}
+          </span>
+        );
+      })}
+    </div>
   );
 }
 
@@ -514,7 +559,12 @@ function LessonBlock({
         : lesson.topic || subject;
   const unpaid = !trial && status !== 'cancelled' && isUnpaid(lesson, students, accounts);
   const height = typeof style.height === 'number' ? style.height : 60;
-  const compactRow = height < 44;
+  // Two lines need ~58px with normal padding (~44 in the narrow week grid); a 45-minute
+  // lesson gets a tighter two-line layout, and anything shorter goes on a single line.
+  const full = narrow ? 44 : 58;
+  const tight = narrow ? 30 : 38;
+  const compactRow = height < tight;
+  const sizeClass = compactRow ? ' compact' : height < full ? ' tight' : '';
   const value = lessonValue(lesson);
 
   const icon =
@@ -531,7 +581,7 @@ function LessonBlock({
   return (
     <button
       ref={refEl}
-      className={`lesson-block${compactRow ? ' compact' : ''}`}
+      className={`lesson-block${sizeClass}`}
       data-status={status}
       data-kind={trial ? 'trial' : undefined}
       style={{ ...style, '--c': color, animationDelay: `${delay}ms` } as CSSProperties}
@@ -735,6 +785,7 @@ function MonthView({ date, byDay, now }: { date: Date; byDay: Map<string, Lesson
   const sum = summarize(liveLessons(rec), { from: dayKey(ms), to: dayKey(me) }, now);
   const today = now.slice(0, 10);
   const swipe = useSwipe((dir) => setDay(dayKey(addMonths(date, dir))));
+  const seen = new Set<DayKind>();
 
   return (
     <div className="view-anim" {...swipe}>
@@ -748,21 +799,24 @@ function MonthView({ date, byDay, now }: { date: Date; byDay: Map<string, Lesson
           const k = dayKey(d);
           const ls = byDay.get(k) ?? [];
           const v = ls.reduce((s, l) => s + lessonValue(l), 0);
+          const kind = dayKindOf(d, ls, offOf(k), workDays);
+          const inMonth = isSameMonth(d, date);
+          if (inMonth) seen.add(kind);
           return (
             <button
               key={k}
               className="mg-day"
-              data-out={isSameMonth(d, date) ? undefined : ''}
-              data-rest={(!workDays.includes(isoWeekday(d)) || offOf(k)) && !ls.some((l) => l.status !== 'cancelled') ? '' : undefined}
+              data-out={inMonth ? undefined : ''}
+              data-kind={kind}
               data-today={k === today ? '' : undefined}
               onClick={() => {
                 setDay(k);
                 updateSettings({ calendarView: 'day' });
               }}
-              aria-label={`${fmt(d, 'd MMMM')}: ${nPlural(ls.length, LESSONS)}`}
+              aria-label={`${fmt(d, 'd MMMM')}: ${nPlural(ls.length, LESSONS)}${kind !== 'work' ? `, ${DAY_KIND_LABEL[kind]}` : ''}`}
             >
               <span className="mg-num">{d.getDate()}</span>
-              {offOf(k) && !ls.some((l) => l.status !== 'cancelled') && <MonthOff kind={offOf(k)!.kind} />}
+              <DayMark kind={kind} />
               <span className="mg-dots">
                 {ls.slice(0, 9).map((l) => (
                   <i
@@ -777,6 +831,7 @@ function MonthView({ date, byDay, now }: { date: Date; byDay: Map<string, Lesson
           );
         })}
       </div>
+      <MonthLegend kinds={seen} />
 
       <div className="tiles four" style={{ marginTop: 16 }}>
         <Tile label="Уроків" value={sum.done + sum.planned} sub={`проведено ${sum.done}${sum.trials ? ` · пробних ${sum.trials}` : ''}`} />

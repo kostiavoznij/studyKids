@@ -107,14 +107,17 @@ export function PaymentSheet({ prefill, onClose }: { prefill: Prefill; onClose: 
       {st && (
         <>
           <div className="field">
-            <span className="field-label">За скільки уроків · {money(st.price)} за урок</span>
-            <div className="chips">
+            <span className="field-label">За скільки уроків</span>
+            <div className="count-chips" role="radiogroup" aria-label="Кількість уроків">
               {PACKAGES.map((n) => (
-                <button key={n} className="chip" aria-pressed={count === n} onClick={() => pickCount(n)}>
-                  {nPlural(n, LESSONS)}
+                <button key={n} role="radio" className="chip" aria-checked={count === n} aria-pressed={count === n} onClick={() => pickCount(n)}>
+                  {n}
                 </button>
               ))}
             </div>
+            <span className="field-hint">
+              {count ? `${nPlural(count, LESSONS)} × ${money(st.price)} = ${money(count * st.price)}` : `Довільна сума · ${money(st.price)} за урок`}
+            </span>
           </div>
 
           <div className="row">

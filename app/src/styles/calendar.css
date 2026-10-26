@@ -322,6 +322,23 @@
   gap: 8px;
 }
 
+.lesson-block.tight {
+  justify-content: center;
+  gap: 0;
+  padding-top: 3px;
+  padding-bottom: 3px;
+}
+
+.lesson-block.tight .lb-name,
+.lesson-block.tight .lb-meta {
+  line-height: 1.2;
+}
+
+.lesson-block.tight .lb-unpaid {
+  width: 18px;
+  height: 18px;
+}
+
 /* ---------- week view ---------- */
 
 .week-grid {
@@ -637,35 +654,101 @@
   min-width: 0;
 }
 
-.mg-day[data-rest]:not([data-today]) {
+/* Month cells by kind of day: tint + a small corner icon, legend below the grid. */
+
+.mg-day {
+  position: relative;
+  --k: var(--text-3);
+}
+
+.mg-day[data-kind='rest'],
+.mg-day[data-kind='restWorked'],
+.mg-day[data-kind='dayoff'] {
   background: var(--surface-2);
 }
 
-.mg-day[data-rest] .mg-num {
+.mg-day[data-kind='rest'] .mg-num,
+.mg-day[data-kind='dayoff'] .mg-num {
   color: var(--text-3);
 }
 
-.mg-off {
+.mg-day[data-kind='restWorked'] {
+  --k: var(--accent);
+}
+
+.mg-day[data-kind='sick'] {
+  --k: var(--bad);
+  background: color-mix(in oklab, var(--bad) 9%, var(--surface));
+}
+
+.mg-day[data-kind='vacation'] {
+  --k: var(--good);
+  background: color-mix(in oklab, var(--good) 9%, var(--surface));
+}
+
+.mg-day[data-kind='holiday'] {
+  --k: var(--warn);
+  background: color-mix(in oklab, var(--warn) 9%, var(--surface));
+}
+
+.mg-day[data-kind='break'] {
+  --k: var(--accent);
+  background: color-mix(in oklab, var(--accent) 8%, var(--surface));
+}
+
+.mg-mark {
+  position: absolute;
+  top: 6px;
+  right: 5px;
+  display: grid;
+  color: var(--k);
+}
+
+.month-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-top: 10px;
+  padding: 0 2px;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--text-2);
+}
+
+.month-legend span {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  max-width: 100%;
-  font-size: 11px;
-  font-weight: 750;
-  color: var(--accent);
-  white-space: nowrap;
-  overflow: hidden;
+  gap: 5px;
+  --k: var(--text-3);
 }
 
-.mg-off-text {
-  display: none;
+.month-legend svg {
+  color: var(--k);
 }
 
-@media (min-width: 900px) {
-  .mg-off-text {
-    display: inline;
-    color: var(--text-2);
-  }
+.month-legend i {
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+}
+
+.month-legend [data-kind='restWorked'],
+.month-legend [data-kind='break'] {
+  --k: var(--accent);
+}
+
+.month-legend [data-kind='sick'] {
+  --k: var(--bad);
+}
+
+.month-legend [data-kind='vacation'] {
+  --k: var(--good);
+}
+
+.month-legend [data-kind='holiday'] {
+  --k: var(--warn);
 }
 
 /* On a phone the «Сьогодні» button needs the room — the year steps aside. */
