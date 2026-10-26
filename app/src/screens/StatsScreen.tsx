@@ -1,14 +1,16 @@
 import { ChevronLeft, ChevronRight, CircleAlert, Info, TrendingDown, TrendingUp } from 'lucide-react';
 import { useState } from 'react';
-import { lessonsOfStudent, useLiveLessons, useLivePayments, useLiveStudents } from '../data/selectors';
+import { dayOffLabel } from '../data/constants';
+import { lessonsOfStudent, useDaysOff, useLiveLessons, useLivePayments, useLiveStudents } from '../data/selectors';
 import { useAccounts } from '../data/billing';
-import { deltaPct, insights, monthSeries, received, summarize, trialConversion, weekdayLoad } from '../data/stats';
+import { daysOffStats, deltaPct, insights, monthSeries, received, summarize, trialConversion, weekdayLoad, type DayOffStat } from '../data/stats';
 import { useData } from '../data/store';
 import { periodLabel, periodRange, shiftPeriod, WEEKDAYS_SHORT, type Period } from '../lib/dates';
-import { compact, grade1, LESSONS, money, nPlural } from '../lib/format';
+import { compact, DAYS, grade1, LESSONS, money, nPlural } from '../lib/format';
 import { ColumnChart } from '../ui/charts';
 import { Avatar, Delta, Empty, Money, Segmented, Tile, useNow } from '../ui/components';
 import { navigate } from '../ui/router';
+import { DAY_OFF_ICONS } from './DayOffSheet';
 
 const PERIODS: { value: Period; label: string }[] = [
   { value: 'week', label: 'Тиждень' },
@@ -24,6 +26,8 @@ export function StatsScreen() {
   const rec = useData((s) => s.lessons);
   const studentsRec = useData((s) => s.students);
   const payments = useLivePayments();
+  const daysOff = useDaysOff();
+  const workDays = useData((s) => s.settings.workDays);
   const accounts = useAccounts();
   const now = useNow();
   const [period, setPeriod] = useState<Period>('month');
@@ -40,6 +44,8 @@ export function StatsScreen() {
   const inflow = received(payments, cur);
   const inflowPrev = received(payments, prev);
   const conv = trialConversion(lessons, studentsRec, cur);
+  const offNow = daysOffStats(daysOff, lessons, cur, workDays);
+  const offBefore = daysOffStats(daysOff, lessons, prev, workDays);
 
   // Money held in advance and money owed, right now, across all families.
   let prepaid = 0;
@@ -156,6 +162,14 @@ export function StatsScreen() {
           </div>
         )}
 
+        <div className="section-title">
+          <h2>Дні без уроків</h2>
+          <span className="faint" style={{ fontSize: 13 }}>
+            {periodLabel(period, anchor)}
+          </span>
+        </div>
+        <DaysOffCard now={offNow} before={offBefore} period={period} />
+
         <div className="stats-charts">
           <div className="card">
             <div className="card-title">
@@ -226,3 +240,40 @@ export function StatsScreen() {
     </div>
   );
 }
+
+function DaysOffCard({ now, before, period }: { now: DayOffStat[]; before: DayOffStat[]; period: Period }) {
+  const sick = now.find((x) => x.kind === 'sick');
+  const rows = sick ? now : [{ kind: 'sick' as const, days: 0, lessons: 0, amount: 0 }, ...now];
+  if (now.length === 0 && before.length === 0) {
+    return (
+      <div className="card faint" style={{ fontSize: 14 }}>
+        Лікарняних, відпусток і свят у цьому періоді не позначено. Позначити день можна в календарі — у зведенні дня кнопка «Позначити день».
+      </div>
+    );
+  }
+  return (
+    <div className="list">
+      {rows.map((x) => {
+        const Icon = DAY_OFF_ICONS[x.kind];
+        const was = before.find((b) => b.kind === x.kind)?.days ?? 0;
+        return (
+          <div key={x.kind} className="list-item dayoff-stat" data-kind={x.kind}>
+            <span className="insight-icon">
+              <Icon size={18} />
+            </span>
+            <div className="list-main">
+              <div className="list-title">{dayOffLabel(x.kind)}</div>
+              <div className="list-sub" style={{ whiteSpace: 'normal' }}>
+                {x.lessons > 0 && `скасовано ${nPlural(x.lessons, LESSONS)}${x.amount > 0 ? ` · ${money(x.amount)}` : ''} · `}
+                {`${PREV_SHORT[period]}: ${was ? nPlural(was, DAYS) : 'не було'}`}
+              </div>
+            </div>
+            <div className="list-end dayoff-days">{x.days ? nPlural(x.days, DAYS) : '—'}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+const PREV_SHORT: Record<Period, string> = { week: 'минулого тижня', month: 'минулого місяця', year: 'минулого року' };

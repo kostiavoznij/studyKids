@@ -1,8 +1,9 @@
-import { addMonths, differenceInCalendarDays, parseISO, startOfMonth } from 'date-fns';
+import { addDays, addMonths, differenceInCalendarDays, parseISO, startOfMonth } from 'date-fns';
 import { cap, dayKey, dayOf, endStamp, fmt, inRange, isoWeekday, type Range } from '../lib/dates';
 import { grade1, LESSONS, nPlural, plural } from '../lib/format';
+import { dayOffLabel } from './constants';
 import { isTrial, lessonEarned, lessonPlanned } from './money';
-import type { ID, Lesson, Payment, Student } from './types';
+import type { DayOff, DayOffKind, ID, Lesson, Payment, Student } from './types';
 
 export interface Summary {
   total: number;
@@ -245,4 +246,52 @@ export function trialConversion(lessons: Lesson[], students: Record<ID, Student>
     }
   }
   return { trials: seen.size, converted };
+}
+
+export interface DayOffStat {
+  kind: DayOffKind;
+  /** days that count: her working days, plus any day whose lessons the mark cancelled */
+  days: number;
+  /** lessons cancelled because of the mark */
+  lessons: number;
+  /** what those lessons would have cost */
+  amount: number;
+}
+
+/** Sick days, vacation and the rest within a period, sick leave first. */
+export function daysOffStats(daysOff: DayOff[], lessons: Lesson[], r: Range, workDays: number[]): DayOffStat[] {
+  const order: DayOffKind[] = ['sick', 'vacation', 'holiday', 'break', 'dayoff', 'other'];
+  const byKind = new Map<DayOffKind, DayOffStat>();
+  const counted = new Set<string>();
+
+  for (const d of daysOff) {
+    if (d.deletedAt) continue;
+    const from = d.from > r.from ? d.from : r.from;
+    const to = d.to < r.to ? d.to : r.to;
+    if (from > to) continue;
+    const reason = dayOffLabel(d.kind);
+    const stat = byKind.get(d.kind) ?? { kind: d.kind, days: 0, lessons: 0, amount: 0 };
+
+    const cancelledOn = new Map<string, number>();
+    for (const l of lessons) {
+      const day = dayOf(l.start);
+      if (l.deletedAt || l.status !== 'cancelled' || day < from || day > to) continue;
+      if (l.cancel?.by !== 'teacher' || l.cancel.reason !== reason) continue;
+      cancelledOn.set(day, (cancelledOn.get(day) ?? 0) + 1);
+      stat.lessons++;
+      if (!isTrial(l)) stat.amount += l.participants.reduce((sum, p) => sum + p.price, 0);
+    }
+
+    for (let day = parseISO(from); dayKey(day) <= to; day = addDays(day, 1)) {
+      const key = dayKey(day);
+      // overlapping marks shouldn't count the same day twice
+      if (counted.has(`${d.kind}:${key}`)) continue;
+      if (workDays.includes(isoWeekday(day)) || cancelledOn.has(key)) {
+        counted.add(`${d.kind}:${key}`);
+        stat.days++;
+      }
+    }
+    byKind.set(d.kind, stat);
+  }
+  return order.map((k) => byKind.get(k)).filter((x): x is DayOffStat => !!x && (x.days > 0 || x.lessons > 0));
 }
