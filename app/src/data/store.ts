@@ -4,11 +4,13 @@ import { nowStamp, todayKey } from '../lib/dates';
 import { uid } from '../lib/format';
 import { DEFAULT_SETTINGS } from './constants';
 import { buildDemo } from './demo';
+import { migrateV1 } from './migrate';
 import {
   blankLesson,
   changedSlots,
   isUntouchedFuture,
   missingScheduled,
+  orphanedScheduled,
   reissueChanged,
   slotKeyOwner,
 } from './schedule';
@@ -18,22 +20,27 @@ import type {
   ID,
   Initiator,
   Lesson,
+  LessonKind,
   Participant,
+  Payment,
   Settings,
   Student,
   StudentStatus,
+  TrialReport,
 } from './types';
 
 export interface DataState {
   students: Record<ID, Student>;
   groups: Record<ID, Group>;
   lessons: Record<ID, Lesson>;
+  payments: Record<ID, Payment>;
   settings: Settings;
   seeded: 'demo' | 'clean' | null;
 }
 
 export type StudentInput = Partial<Student> & { name: string };
 export type GroupInput = Partial<Group> & { name: string };
+export type PaymentInput = Partial<Payment> & { studentId: ID; amount: number };
 
 export interface NewLessonInput {
   start: string;
@@ -41,6 +48,7 @@ export interface NewLessonInput {
   participants: Participant[];
   groupId?: ID;
   topic?: string;
+  kind?: LessonKind;
 }
 
 interface Actions {
@@ -55,6 +63,7 @@ interface Actions {
   deleteGroup(id: ID): void;
   createLesson(input: NewLessonInput): ID;
   updateLesson(id: ID, patch: Partial<Lesson>): void;
+  updateTrial(id: ID, patch: Partial<TrialReport>): void;
   updateParticipant(id: ID, studentId: ID, patch: Partial<Participant>): void;
   putLesson(lesson: Lesson): void;
   markDone(id: ID): void;
@@ -63,6 +72,8 @@ interface Actions {
   cancelLesson(id: ID, cancel: Omit<Cancel, 'at'>): void;
   moveLesson(id: ID, to: string, by: Initiator, reason: string, duration?: number): void;
   deleteLesson(id: ID): void;
+  savePayment(input: PaymentInput): ID;
+  deletePayment(id: ID): void;
   updateSettings(patch: Partial<Settings>): void;
   loadDemo(): void;
   clearAll(): void;
@@ -94,6 +105,8 @@ const ownedBySlot = (kind: 's' | 'g', ownerId: ID, slotIds?: Set<string>) => (l:
   return k.kind === kind && k.owner === ownerId && (!slotIds || slotIds.has(k.slotId));
 };
 
+const EMPTY_TRIAL: TrialReport = { level: '', strengths: '', weaknesses: '', plan: '' };
+
 export const useData = create<Store>()(
   persist(
     (set, get) => {
@@ -108,6 +121,7 @@ export const useData = create<Store>()(
         students: {},
         groups: {},
         lessons: {},
+        payments: {},
         settings: DEFAULT_SETTINGS,
         seeded: null,
 
@@ -118,14 +132,13 @@ export const useData = create<Store>()(
 
         ensureSchedule() {
           const s = get();
-          const fresh = missingScheduled(
-            Object.values(s.students),
-            Object.values(s.groups),
-            Object.values(s.lessons),
-            s.settings.horizonWeeks,
-          );
-          if (fresh.length === 0) return;
+          const list = Object.values(s.lessons);
+          const orphans = orphanedScheduled(s.students, s.groups, list, nowStamp());
+          const fresh = missingScheduled(Object.values(s.students), Object.values(s.groups), list, s.settings.horizonWeeks);
+          if (fresh.length === 0 && orphans.length === 0) return;
           const lessons = { ...s.lessons };
+          const t = Date.now();
+          for (const l of orphans) lessons[l.id] = { ...l, deletedAt: t, updatedAt: t };
           for (const l of fresh) lessons[l.id] = l;
           set({ lessons });
         },
@@ -144,18 +157,16 @@ export const useData = create<Store>()(
             if (next.status !== 'active') lessons = dropFuture(lessons, ownedBySlot('s', prev.id));
 
             // A new price applies to future lessons that still carry the old one.
-            if (next.price !== prev.price || next.currency !== prev.currency) {
+            if (next.price !== prev.price) {
               const now = nowStamp();
               lessons = { ...lessons };
               for (const l of Object.values(lessons)) {
-                if (l.deletedAt || l.status !== 'planned' || l.start < now || l.groupId) continue;
+                if (l.deletedAt || l.status !== 'planned' || l.start < now || l.groupId || l.kind === 'trial') continue;
                 const p = l.participants.find((x) => x.studentId === prev.id);
-                if (!p || p.price !== prev.price || p.currency !== prev.currency) continue;
+                if (!p || p.price !== prev.price) continue;
                 lessons[l.id] = stamp({
                   ...l,
-                  participants: l.participants.map((x) =>
-                    x === p ? { ...x, price: next.price, currency: next.currency } : x,
-                  ),
+                  participants: l.participants.map((x) => (x === p ? { ...x, price: next.price } : x)),
                 });
               }
             }
@@ -167,7 +178,7 @@ export const useData = create<Store>()(
               subject: 'Українська мова',
               grade: '',
               price: s.settings.defaultPrice,
-              currency: s.settings.baseCurrency,
+              billing: s.settings.defaultBilling,
               duration: s.settings.defaultDuration,
               timezone: '',
               contact: {},
@@ -227,7 +238,6 @@ export const useData = create<Store>()(
             next = stamp({ ...prev, ...input });
             const relevant =
               prev.price !== next.price ||
-              prev.currency !== next.currency ||
               prev.studentIds.join() !== next.studentIds.join() ||
               changedSlots(prev.schedule, next.schedule).size > 0 ||
               next.status !== 'active';
@@ -244,7 +254,6 @@ export const useData = create<Store>()(
               studentIds: [],
               schedule: [],
               price: s.settings.defaultPrice,
-              currency: s.settings.baseCurrency,
               duration: s.settings.defaultDuration,
               status: 'active',
               createdAt: t,
@@ -269,12 +278,21 @@ export const useData = create<Store>()(
           const l = blankLesson(input.start, input.duration, input.participants);
           if (input.groupId) l.groupId = input.groupId;
           if (input.topic) l.topic = input.topic;
+          if (input.kind === 'trial') {
+            l.kind = 'trial';
+            l.trial = { ...EMPTY_TRIAL };
+            l.participants = l.participants.map((p) => ({ ...p, price: 0 }));
+          }
           set((s) => ({ lessons: { ...s.lessons, [l.id]: l } }));
           return l.id;
         },
 
         updateLesson(id, patch) {
           patchLesson(id, (l) => ({ ...l, ...patch }));
+        },
+
+        updateTrial(id, patch) {
+          patchLesson(id, (l) => ({ ...l, trial: { ...EMPTY_TRIAL, ...l.trial, ...patch } }));
         },
 
         updateParticipant(id, studentId, patch) {
@@ -326,6 +344,23 @@ export const useData = create<Store>()(
           patchLesson(id, (l) => ({ ...l, deletedAt: Date.now() }));
         },
 
+        savePayment(input) {
+          const s = get();
+          const prev = input.id ? s.payments[input.id] : undefined;
+          const t = Date.now();
+          const next: Payment = prev
+            ? stamp({ ...prev, ...input })
+            : { id: uid(), date: todayKey(), note: '', createdAt: t, updatedAt: t, ...input };
+          set({ payments: { ...s.payments, [next.id]: next } });
+          return next.id;
+        },
+
+        deletePayment(id) {
+          const p = get().payments[id];
+          if (!p) return;
+          set((s) => ({ payments: { ...s.payments, [id]: stamp({ ...p, deletedAt: Date.now() }) } }));
+        },
+
         updateSettings(patch) {
           const prevHorizon = get().settings.horizonWeeks;
           set((s) => ({ settings: { ...s.settings, ...patch } }));
@@ -333,28 +368,33 @@ export const useData = create<Store>()(
         },
 
         loadDemo() {
-          const demo = buildDemo(get().settings);
-          set({ ...demo, seeded: 'demo' });
+          set({ ...buildDemo(), seeded: 'demo' });
           get().ensureSchedule();
         },
 
         clearAll() {
-          set({ students: {}, groups: {}, lessons: {}, seeded: 'clean' });
+          set({ students: {}, groups: {}, lessons: {}, payments: {}, seeded: 'clean' });
         },
 
         exportData() {
-          const { students, groups, lessons, settings } = get();
-          return JSON.stringify({ app: 'uroky', version: 1, exportedAt: new Date().toISOString(), students, groups, lessons, settings }, null, 1);
+          const { students, groups, lessons, payments, settings } = get();
+          return JSON.stringify(
+            { app: 'uroky', version: 2, exportedAt: new Date().toISOString(), students, groups, lessons, payments, settings },
+            null,
+            1,
+          );
         },
 
         importData(json) {
           try {
-            const d = JSON.parse(json);
+            let d = JSON.parse(json);
             if (d.app !== 'uroky' || typeof d.students !== 'object' || typeof d.lessons !== 'object') return false;
+            if (!d.version || d.version < 2) d = migrateV1(d);
             set({
               students: d.students,
               groups: d.groups ?? {},
               lessons: d.lessons,
+              payments: d.payments ?? {},
               settings: { ...DEFAULT_SETTINGS, ...d.settings },
               seeded: 'clean',
             });
@@ -368,15 +408,23 @@ export const useData = create<Store>()(
     },
     {
       name: 'uroky-data',
-      version: 1,
-      partialize: ({ students, groups, lessons, settings, seeded }) => ({ students, groups, lessons, settings, seeded }),
+      version: 2,
+      partialize: ({ students, groups, lessons, payments, settings, seeded }) => ({ students, groups, lessons, payments, settings, seeded }),
+      migrate: (persisted, version) => {
+        if (version >= 2) return persisted as DataState;
+        // Keep the old copy around in case something goes wrong with the conversion.
+        try {
+          localStorage.setItem('uroky-data-v1-backup', JSON.stringify(persisted));
+        } catch {
+          /* storage full or blocked — the migration still runs */
+        }
+        const old = persisted as { seeded?: string } | undefined;
+        if (!old || old.seeded !== 'clean') return { seeded: null } as unknown as DataState;
+        return migrateV1(old) as DataState;
+      },
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<DataState>;
-        return {
-          ...current,
-          ...p,
-          settings: { ...DEFAULT_SETTINGS, ...p.settings, rates: { ...DEFAULT_SETTINGS.rates, ...p.settings?.rates } },
-        };
+        return { ...current, ...p, payments: p.payments ?? {}, settings: { ...DEFAULT_SETTINGS, ...p.settings } };
       },
     },
   ),

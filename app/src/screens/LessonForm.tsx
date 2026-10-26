@@ -1,11 +1,12 @@
 import { parseISO } from 'date-fns';
-import { Repeat, UserPlus } from 'lucide-react';
+import { Plus, Repeat, Sparkles, UserPlus } from 'lucide-react';
 import { useState } from 'react';
+import { isTrial } from '../data/money';
 import { lessonsByDay, lessonTitle, useLiveGroups, useLiveStudents } from '../data/selectors';
 import { studentSlotKey } from '../data/schedule';
 import { useData } from '../data/store';
-import type { Currency, ID, Lesson, Participant } from '../data/types';
-import { isoWeekday, minutesOf, timeOf, todayKey, WEEKDAYS_LONG } from '../lib/dates';
+import type { ID, Lesson, Participant } from '../data/types';
+import { cap, isoWeekday, minutesOf, timeOf, todayKey, WEEKDAYS_LONG } from '../lib/dates';
 import { uid } from '../lib/format';
 import { Avatar, Empty, Segmented, Sheet, Switch } from '../ui/components';
 import { DurationChips, PriceField, StudentChips } from '../ui/fields';
@@ -17,6 +18,7 @@ interface Prefill {
   start?: string;
   studentId?: ID;
   groupId?: ID;
+  trial?: boolean;
 }
 
 export function NewLessonSheet({ prefill, onClose }: { prefill: Prefill; onClose: () => void }) {
@@ -41,13 +43,14 @@ export function LessonForm({ lesson, prefill, onDone }: { lesson?: Lesson; prefi
   const setDay = useUi((s) => s.setDay);
 
   const inLesson = (id: ID) => !!lesson?.participants.some((p) => p.studentId === id);
-  const students = useLiveStudents().filter((s) => s.status === 'active' || inLesson(s.id));
+  const allStudents = useLiveStudents();
   const groups = useLiveGroups().filter((g) => g.status === 'active' || g.id === lesson?.groupId);
 
   const initStart = lesson?.start ?? prefill?.start ?? `${todayKey()}T14:00`;
   const preGroup = prefill?.groupId ? groupsRec[prefill.groupId] : undefined;
   const preStudent = prefill?.studentId ? studentsRec[prefill.studentId] : undefined;
 
+  const [trial, setTrial] = useState(lesson ? isTrial(lesson) : !!prefill?.trial || preStudent?.status === 'trial');
   const [day, setDayValue] = useState(initStart.slice(0, 10));
   const [time, setTime] = useState(timeOf(initStart));
   const [mode, setMode] = useState<Mode>(
@@ -57,22 +60,31 @@ export function LessonForm({ lesson, prefill, onDone }: { lesson?: Lesson; prefi
     lesson ? lesson.participants.map((p) => p.studentId) : preGroup ? preGroup.studentIds : preStudent ? [preStudent.id] : [],
   );
   const [groupId, setGroupId] = useState<ID | undefined>(lesson?.groupId ?? preGroup?.id);
-  const [duration, setDuration] = useState(lesson?.duration ?? preGroup?.duration ?? preStudent?.duration ?? settings.defaultDuration);
-  const firstP = lesson?.participants[0];
-  const [price, setPrice] = useState<number>(firstP?.price ?? preGroup?.price ?? preStudent?.price ?? settings.defaultPrice);
-  const [currency, setCurrency] = useState<Currency>(
-    firstP?.currency ?? preGroup?.currency ?? preStudent?.currency ?? settings.baseCurrency,
+  const [duration, setDuration] = useState(
+    lesson?.duration ?? preGroup?.duration ?? (trial ? 45 : preStudent?.duration ?? settings.defaultDuration),
   );
+  const [price, setPrice] = useState<number>(lesson?.participants[0]?.price ?? preGroup?.price ?? preStudent?.price ?? settings.defaultPrice);
   const [topic, setTopic] = useState(lesson?.topic ?? '');
   const [weekly, setWeekly] = useState(false);
+  const [newName, setNewName] = useState('');
 
-  if (students.length === 0) {
+  // Trial lessons are for newcomers, so students still on a trial show up there too.
+  const students = allStudents.filter(
+    (s) => inLesson(s.id) || s.status === 'active' || (trial && s.status === 'trial'),
+  );
+
+  if (students.length === 0 && !trial) {
     return (
       <Empty icon={<UserPlus size={36} />} title="Ще немає учнів">
-        <p style={{ marginBottom: 12 }}>Додайте першого учня — і можна планувати уроки.</p>
-        <button className="btn btn-primary" onClick={() => open({ kind: 'student' })}>
-          Додати учня
-        </button>
+        <p style={{ marginBottom: 12 }}>Додайте першого учня або запишіть когось на пробний урок.</p>
+        <div className="row">
+          <button className="btn btn-ghost" onClick={() => setTrial(true)}>
+            Пробний урок
+          </button>
+          <button className="btn btn-primary" onClick={() => open({ kind: 'student' })}>
+            Додати учня
+          </button>
+        </div>
       </Empty>
     );
   }
@@ -81,10 +93,9 @@ export function LessonForm({ lesson, prefill, onDone }: { lesson?: Lesson; prefi
     const st = studentsRec[id];
     setIds([id]);
     setGroupId(undefined);
-    if (!lesson && st) {
+    if (!lesson && st && !trial) {
       setDuration(st.duration);
       setPrice(st.price);
-      setCurrency(st.currency);
     }
   };
   const toggleMember = (id: ID) => setIds((xs) => (xs.includes(id) ? xs.filter((x) => x !== id) : [...xs, id]));
@@ -94,13 +105,30 @@ export function LessonForm({ lesson, prefill, onDone }: { lesson?: Lesson; prefi
     setGroupId(id);
     setIds(g.studentIds);
     setPrice(g.price);
-    setCurrency(g.currency);
     setDuration(g.duration);
   };
   const switchMode = (m: Mode) => {
     setMode(m);
     if (m === 'one' && ids.length > 1) setIds(ids.slice(0, 1));
     if (m === 'one') setGroupId(undefined);
+  };
+  const switchTrial = (v: boolean) => {
+    setTrial(v);
+    if (v) {
+      setMode('one');
+      setGroupId(undefined);
+      setIds((xs) => xs.slice(0, 1));
+      setDuration(45);
+    } else {
+      setDuration(settings.defaultDuration);
+    }
+  };
+  const addNewcomer = () => {
+    const name = newName.trim();
+    if (!name) return;
+    const id = saveStudent({ name, status: 'trial' });
+    setIds([id]);
+    setNewName('');
   };
 
   const sameDay = (lessonsByDay(rec).get(day) ?? []).filter((l) => l.id !== lesson?.id && l.status !== 'cancelled');
@@ -118,7 +146,7 @@ export function LessonForm({ lesson, prefill, onDone }: { lesson?: Lesson; prefi
     const start = `${day}T${time}`;
     const participants: Participant[] = ids.map((id) => {
       const prev = lesson?.participants.find((p) => p.studentId === id);
-      return { ...(prev ?? { paid: false }), studentId: id, price, currency };
+      return { ...prev, studentId: id, price: trial ? 0 : price };
     });
     const gid = mode === 'group' ? groupId : undefined;
 
@@ -130,11 +158,14 @@ export function LessonForm({ lesson, prefill, onDone }: { lesson?: Lesson; prefi
     }
 
     const st = studentsRec[ids[0]];
-    if (weekly && mode === 'one' && st) {
+    if (trial) {
+      createLesson({ start, duration, participants, kind: 'trial' });
+      notify(`Пробний урок: ${st?.name ?? ''}`);
+    } else if (weekly && mode === 'one' && st) {
       const slot = { id: uid(), weekday, time, duration };
-      saveStudent({ ...st, price, currency, duration, schedule: [...st.schedule, slot] });
+      saveStudent({ ...st, price, duration, schedule: [...st.schedule, slot] });
       const key = studentSlotKey(st.id, slot.id, day);
-      const made = Object.values(useData.getState().lessons).find((l) => l.slotKey === key);
+      const made = useData.getState().lessons[key];
       if (made) {
         if (topic) updateLesson(made.id, { topic });
       } else {
@@ -151,20 +182,50 @@ export function LessonForm({ lesson, prefill, onDone }: { lesson?: Lesson; prefi
 
   return (
     <div>
-      <Segmented
-        label="Тип уроку"
-        value={mode}
-        onChange={switchMode}
-        options={[
-          { value: 'one', label: 'Індивідуальний' },
-          { value: 'group', label: 'Груповий' },
-        ]}
-      />
+      {!lesson && (
+        <div className="toggle-row trial-toggle" data-on={trial ? '' : undefined}>
+          <Sparkles size={20} />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 700 }}>Пробний урок</div>
+            <div className="field-hint">Безкоштовне знайомство з новим учнем і перевірка знань</div>
+          </div>
+          <Switch checked={trial} onChange={switchTrial} label="Пробний урок" />
+        </div>
+      )}
+
+      {!trial && (
+        <div style={{ marginTop: lesson ? 0 : 14 }}>
+          <Segmented
+            label="Тип уроку"
+            value={mode}
+            onChange={switchMode}
+            options={[
+              { value: 'one', label: 'Індивідуальний' },
+              { value: 'group', label: 'Груповий' },
+            ]}
+          />
+        </div>
+      )}
 
       {mode === 'one' ? (
         <div className="field" style={{ marginTop: 16 }}>
           <span className="field-label">Учень</span>
-          <StudentChips students={students} selected={ids} onToggle={pickOne} />
+          {students.length > 0 && <StudentChips students={students} selected={ids} onToggle={pickOne} />}
+          {trial && !lesson && (
+            <div className="newcomer">
+              <input
+                className="input"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && addNewcomer()}
+                placeholder="Новий учень — ім'я"
+                aria-label="Ім'я нового учня"
+              />
+              <button className="btn btn-soft" disabled={!newName.trim()} onClick={addNewcomer}>
+                <Plus size={17} /> Додати
+              </button>
+            </div>
+          )}
         </div>
       ) : (
         <>
@@ -184,9 +245,7 @@ export function LessonForm({ lesson, prefill, onDone }: { lesson?: Lesson; prefi
           <div className="field" style={{ marginTop: 16 }}>
             <span className="field-label">Учасники · {ids.length}</span>
             <StudentChips students={students} selected={ids} onToggle={toggleMember} />
-            {groups.length === 0 && (
-              <span className="field-hint">Постійну групу з розкладом можна створити на вкладці «Учні».</span>
-            )}
+            {groups.length === 0 && <span className="field-hint">Постійну групу з розкладом можна створити на вкладці «Учні».</span>}
           </div>
         </>
       )}
@@ -212,30 +271,26 @@ export function LessonForm({ lesson, prefill, onDone }: { lesson?: Lesson; prefi
         <DurationChips value={duration} onChange={setDuration} />
       </div>
 
-      <div style={{ marginTop: 14 }}>
-        <PriceField
-          label={mode === 'group' ? 'Ціна з одного учня' : 'Ціна уроку'}
-          price={price}
-          currency={currency}
-          onPrice={setPrice}
-          onCurrency={setCurrency}
-        />
-      </div>
+      {!trial && (
+        <div className="field" style={{ marginTop: 14 }}>
+          <PriceField label={mode === 'group' ? 'Ціна з одного учня' : 'Ціна уроку'} price={price} onPrice={setPrice} />
+        </div>
+      )}
 
-      {!lesson && (
+      {!lesson && !trial && (
         <div className="field" style={{ marginTop: 14 }}>
           <span className="field-label">Тема (можна пізніше)</span>
           <input className="input" value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="Напр.: Апостроф" />
         </div>
       )}
 
-      {!lesson && mode === 'one' && (
+      {!lesson && !trial && mode === 'one' && (
         <div className="toggle-row weekly-row">
           <Repeat size={20} className="faint" />
           <div style={{ flex: 1 }}>
             <div style={{ fontWeight: 700 }}>Щотижня в цей час</div>
             <div className="field-hint">
-              {cap1(WEEKDAYS_LONG[weekday - 1])} о {time} — уроки з'являтимуться в календарі самі
+              {cap(WEEKDAYS_LONG[weekday - 1])} о {time} — уроки з'являтимуться в календарі самі
             </div>
           </div>
           <Switch checked={weekly} onChange={setWeekly} label="Щотижня" />
@@ -247,11 +302,9 @@ export function LessonForm({ lesson, prefill, onDone }: { lesson?: Lesson; prefi
           {lesson ? 'Назад' : 'Скасувати'}
         </button>
         <button className="btn btn-primary" disabled={!canSave} onClick={save}>
-          {lesson ? 'Зберегти' : 'Додати урок'}
+          {lesson ? 'Зберегти' : trial ? 'Записати на пробний' : 'Додати урок'}
         </button>
       </div>
     </div>
   );
 }
-
-const cap1 = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);

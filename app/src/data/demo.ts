@@ -3,7 +3,8 @@ import { dayKey, isoWeekday, nowStamp, todayKey } from '../lib/dates';
 import { uid } from '../lib/format';
 import { CANCEL_REASONS, MOVE_REASONS } from './constants';
 import { blankLesson, groupSlotKey, studentSlotKey } from './schedule';
-import type { Currency, Group, ID, Lesson, Settings, Slot, Student } from './types';
+import { chargeOf } from './money';
+import type { Billing, Group, ID, Lesson, Payment, Slot, Student } from './types';
 
 // Invented students: the demo is published publicly, so no real names here.
 
@@ -99,7 +100,11 @@ interface Spec {
   subject: string;
   grade: string;
   price: number;
-  currency: Currency;
+  billing: Billing;
+  /** lessons per prepaid package */
+  pkg: number;
+  /** stop paying this many days ago — makes a debt or an empty balance show up */
+  stopPayingDaysAgo?: number;
   timezone?: string;
   slots: [number, string][];
   weeksAgo: number;
@@ -121,7 +126,8 @@ const SPECS: Spec[] = [
     subject: 'Українська мова',
     grade: '3 клас',
     price: 400,
-    currency: 'UAH',
+    billing: 'prepaid',
+    pkg: 8,
     slots: [[1, '14:00'], [4, '14:00']],
     weeksAgo: 14,
     gradeFrom: 3,
@@ -141,7 +147,8 @@ const SPECS: Spec[] = [
     subject: 'Читання',
     grade: '2 клас',
     price: 350,
-    currency: 'UAH',
+    billing: 'after',
+    pkg: 1,
     slots: [[1, '15:00'], [3, '15:00']],
     weeksAgo: 12,
     gradeFrom: 3.2,
@@ -157,7 +164,9 @@ const SPECS: Spec[] = [
     subject: 'Українська мова',
     grade: '5 клас',
     price: 450,
-    currency: 'UAH',
+    billing: 'prepaid',
+    pkg: 8,
+    stopPayingDaysAgo: 12,
     timezone: 'Europe/Warsaw',
     slots: [[1, '16:00'], [5, '16:00']],
     weeksAgo: 16,
@@ -174,7 +183,8 @@ const SPECS: Spec[] = [
     subject: 'Українська мова',
     grade: '4 клас',
     price: 300,
-    currency: 'UAH',
+    billing: 'prepaid',
+    pkg: 4,
     slots: [[3, '17:00']],
     weeksAgo: 14,
     gradeFrom: 4,
@@ -192,7 +202,8 @@ const SPECS: Spec[] = [
     subject: 'Українська мова',
     grade: '1 клас',
     price: 400,
-    currency: 'UAH',
+    billing: 'prepaid',
+    pkg: 4,
     slots: [[1, '17:00'], [4, '17:00']],
     weeksAgo: 10,
     gradeFrom: 3.4,
@@ -208,7 +219,8 @@ const SPECS: Spec[] = [
     subject: 'Підготовка до НМТ',
     grade: '11 клас',
     price: 500,
-    currency: 'UAH',
+    billing: 'prepaid',
+    pkg: 8,
     slots: [[2, '18:00'], [5, '18:00']],
     weeksAgo: 9,
     gradeFrom: 3.9,
@@ -223,8 +235,9 @@ const SPECS: Spec[] = [
     color: 'amber',
     subject: 'Українська як іноземна',
     grade: '10 років',
-    price: 18,
-    currency: 'EUR',
+    price: 800,
+    billing: 'prepaid',
+    pkg: 8,
     timezone: 'Europe/Berlin',
     slots: [[1, '18:00'], [6, '11:00']],
     weeksAgo: 11,
@@ -240,8 +253,10 @@ const SPECS: Spec[] = [
     color: 'teal',
     subject: 'Українська як іноземна',
     grade: '8 років',
-    price: 20,
-    currency: 'USD',
+    price: 850,
+    billing: 'after',
+    pkg: 1,
+    stopPayingDaysAgo: 5,
     timezone: 'America/Toronto',
     slots: [[1, '20:00'], [3, '20:00']],
     weeksAgo: 8,
@@ -258,7 +273,8 @@ const SPECS: Spec[] = [
     subject: 'Українська мова',
     grade: '7 клас',
     price: 450,
-    currency: 'UAH',
+    billing: 'prepaid',
+    pkg: 4,
     slots: [[2, '16:00']],
     weeksAgo: 4,
     gradeFrom: 4,
@@ -274,7 +290,8 @@ const SPECS: Spec[] = [
     subject: 'Читання',
     grade: '1 клас',
     price: 350,
-    currency: 'UAH',
+    billing: 'prepaid',
+    pkg: 4,
     slots: [[2, '15:00']],
     weeksAgo: 15,
     pausedWeeksAgo: 5,
@@ -310,7 +327,7 @@ function occurrences(slots: Slot[], from: Date, to: Date) {
   return out.sort((a, b) => (a.day + a.slot.time).localeCompare(b.day + b.slot.time));
 }
 
-export function buildDemo(_settings: Settings) {
+export function buildDemo() {
   const rnd = mulberry32(20261026);
   const pick = <T,>(xs: T[]) => xs[Math.floor(rnd() * xs.length)];
   const now = nowStamp();
@@ -318,37 +335,39 @@ export function buildDemo(_settings: Settings) {
   const midnight = new Date();
   midnight.setHours(0, 0, 0, 0);
   const recentFrom = dayKey(subDays(midnight, 28));
-  const unpaidFrom = dayKey(subDays(midnight, 10));
 
   const students: Record<ID, Student> = {};
   const groups: Record<ID, Group> = {};
   const lessons: Record<ID, Lesson> = {};
+  const payments: Record<ID, Payment> = {};
   const byName: Record<string, ID> = {};
 
+  const student = (spec: Spec, status: Student['status'], start: Date, slots: Slot[]): Student => ({
+    id: uid(),
+    name: spec.name,
+    color: spec.color,
+    subject: spec.subject,
+    grade: spec.grade,
+    price: spec.price,
+    billing: spec.billing,
+    duration: 60,
+    timezone: spec.timezone ?? '',
+    contact: spec.contact,
+    schedule: slots,
+    status,
+    startDate: dayKey(start),
+    notes: (spec.notes ?? []).map(([ago, text]) => ({ id: uid(), date: dayKey(subDays(midnight, ago)), text })),
+    createdAt: start.getTime(),
+    updatedAt: start.getTime(),
+  });
+
   for (const spec of SPECS) {
-    const id = uid();
-    byName[spec.name] = id;
     const start = subWeeks(midnight, spec.weeksAgo);
     const slots: Slot[] = spec.slots.map(([weekday, time]) => ({ id: uid(), weekday, time, duration: 60 }));
-    const created = start.getTime();
-    students[id] = {
-      id,
-      name: spec.name,
-      color: spec.color,
-      subject: spec.subject,
-      grade: spec.grade,
-      price: spec.price,
-      currency: spec.currency,
-      duration: 60,
-      timezone: spec.timezone ?? '',
-      contact: spec.contact,
-      schedule: slots,
-      status: spec.pausedWeeksAgo ? 'paused' : 'active',
-      startDate: dayKey(start),
-      notes: (spec.notes ?? []).map(([ago, text]) => ({ id: uid(), date: dayKey(subDays(midnight, ago)), text })),
-      createdAt: created,
-      updatedAt: created,
-    };
+    const st = student(spec, spec.pausedWeeksAgo ? 'paused' : 'active', start, slots);
+    const id = st.id;
+    students[id] = st;
+    byName[spec.name] = id;
 
     const until = spec.pausedWeeksAgo ? subWeeks(midnight, spec.pausedWeeksAgo) : midnight;
     const occ = occurrences(slots, start, until);
@@ -357,31 +376,29 @@ export function buildDemo(_settings: Settings) {
       const startStamp = `${day}T${slot.time}`;
       if (startStamp >= now) return; // future lessons come from the schedule generator
       const progress = occ.length > 1 ? i / (occ.length - 1) : 1;
-      const l = blankLesson(startStamp, 60, [{ studentId: id, price: spec.price, currency: spec.currency, paid: true }]);
-      l.slotKey = studentSlotKey(id, slot.id, day);
+      const l = blankLesson(startStamp, 60, [{ studentId: id, price: spec.price }]);
+      l.id = l.slotKey = studentSlotKey(id, slot.id, day);
       l.createdAt = l.updatedAt = parseISO(day).getTime();
 
       const cancelP = day >= recentFrom && spec.cancelRecentP != null ? spec.cancelRecentP : spec.cancelP;
       if (rnd() < cancelP) {
-        const charged = rnd() < 0.2;
         l.status = 'cancelled';
-        l.cancel = { by: rnd() < 0.8 ? 'student' : 'teacher', reason: pick(CANCEL_REASONS), charged, at: l.createdAt };
-        l.participants[0].paid = charged;
+        l.cancel = { by: rnd() < 0.8 ? 'student' : 'teacher', reason: pick(CANCEL_REASONS), charged: rnd() < 0.2, at: l.createdAt };
       } else {
         if (rnd() < spec.moveP) {
-          const to = `${dayKey(addDays(parseISO(day), rnd() < 0.6 ? 1 : 2))}T${slot.time}`;
+          // two days later could land on the student's next regular slot, so shift the hour too
+          const twoDays = rnd() >= 0.6;
+          const hour = String(Number(slot.time.slice(0, 2)) + (twoDays ? 1 : 0)).padStart(2, '0');
+          const to = `${dayKey(addDays(parseISO(day), twoDays ? 2 : 1))}T${hour}${slot.time.slice(2)}`;
           l.moves = [{ from: startStamp, to, by: rnd() < 0.75 ? 'student' : 'teacher', reason: pick(MOVE_REASONS), at: l.createdAt }];
           l.start = to;
         }
-        if (l.start >= now) {
-          l.participants[0].paid = false;
-        } else {
+        if (l.start < now) {
           const g = spec.gradeFrom + (spec.gradeTo - spec.gradeFrom) * progress + (rnd() - 0.5) * 1.3;
           l.status = 'done';
           l.topic = spec.topics[topicIdx++ % spec.topics.length];
           l.homework = pick(HOMEWORK);
           l.participants[0].grade = Math.max(1, Math.min(5, Math.round(g)));
-          l.participants[0].paid = day < unpaidFrom || rnd() < 0.55;
         }
       }
       lessons[l.id] = l;
@@ -400,7 +417,6 @@ export function buildDemo(_settings: Settings) {
     studentIds: members,
     schedule: [gSlot],
     price: 250,
-    currency: 'UAH',
     duration: 60,
     status: 'active',
     createdAt: gStart.getTime(),
@@ -412,22 +428,73 @@ export function buildDemo(_settings: Settings) {
     const l = blankLesson(
       startStamp,
       60,
-      members.map((studentId) => ({
-        studentId,
-        price: 250,
-        currency: 'UAH' as Currency,
-        paid: true,
-        grade: 3 + Math.round(rnd() * 2),
-        absent: rnd() < 0.12,
-      })),
+      members.map((studentId) => ({ studentId, price: 250, grade: 3 + Math.round(rnd() * 2), absent: rnd() < 0.12 })),
     );
     for (const p of l.participants) if (p.absent) p.grade = undefined;
     l.groupId = gid;
-    l.slotKey = groupSlotKey(gid, gSlot.id, day);
+    l.id = l.slotKey = groupSlotKey(gid, gSlot.id, day);
     l.status = 'done';
     l.topic = TOPICS_GROUP[i % TOPICS_GROUP.length];
     lessons[l.id] = l;
   });
 
-  return { students, groups, lessons };
+  // Trial lessons: one that became a regular student, one still deciding, one upcoming.
+  const trial = (studentId: ID, start: string, report?: Lesson['trial']) => {
+    const l = blankLesson(start, 45, [{ studentId, price: 0 }]);
+    l.kind = 'trial';
+    l.trial = report ?? { level: '', strengths: '', weaknesses: '', plan: '' };
+    if (report) l.status = 'done';
+    lessons[l.id] = l;
+  };
+  const milana = students[byName['Мілана']];
+  trial(milana.id, `${dayKey(subDays(parseISO(milana.startDate), 3))}T16:00`, {
+    level: 'Відповідає віку',
+    strengths: 'Добре читає, великий словниковий запас, охоче говорить.',
+    weaknesses: 'Пунктуація у складних реченнях, плутає -ться/-шся.',
+    plan: 'Двічі на тиждень: правопис і синтаксис, щомісяця контрольна.',
+    outcome: 'continue',
+  });
+  const newbie = (name: string, color: string, grade: string) => {
+    const spec: Spec = { ...SPECS[0], name, color, grade, notes: [], contact: { parent: 'Мама' }, price: 400, billing: 'prepaid' };
+    const st = student(spec, 'trial', midnight, []);
+    students[st.id] = st;
+    return st.id;
+  };
+  trial(newbie('Денис', 'lime', '2 клас'), `${dayKey(subDays(midnight, 3))}T19:00`, {
+    level: 'Нижче вікової норми',
+    strengths: "Гарно переказує, уважний, швидко запам'ятовує правила.",
+    weaknesses: 'Читає по складах, пропускає букви на письмі.',
+    plan: 'Читання щодня по 10 хв, звуко-буквений аналіз, списування.',
+    outcome: 'thinking',
+  });
+  trial(newbie('Вероніка', 'red', '4 клас'), `${dayKey(addDays(midnight, 1))}T19:00`);
+
+  // Payments: prepaying families buy a package when the balance runs out,
+  // the others pay right after each lesson.
+  for (const spec of SPECS) {
+    const id = byName[spec.name];
+    const stopFrom = spec.stopPayingDaysAgo != null ? dayKey(subDays(midnight, spec.stopPayingDaysAgo)) : '9999';
+    let balance = 0;
+    const pay = (date: string, amount: number, count: number) => {
+      const t = parseISO(date).getTime();
+      const p: Payment = { id: uid(), studentId: id, date, amount, lessons: count, note: '', createdAt: t, updatedAt: t };
+      payments[p.id] = p;
+      balance += amount;
+    };
+    const own = Object.values(lessons)
+      .filter((l) => l.participants.some((p) => p.studentId === id))
+      .sort((a, b) => a.start.localeCompare(b.start));
+    for (const l of own) {
+      const c = chargeOf(l, l.participants.find((x) => x.studentId === id)!);
+      if (c <= 0) continue;
+      const day = l.start.slice(0, 10);
+      if (spec.billing === 'prepaid' && balance < c && day < stopFrom) {
+        pay(dayKey(subDays(parseISO(day), 1)), spec.price * spec.pkg, spec.pkg);
+      }
+      balance -= c;
+      if (spec.billing === 'after' && day < stopFrom) pay(day, c, 1);
+    }
+  }
+
+  return { students, groups, lessons, payments };
 }

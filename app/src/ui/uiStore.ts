@@ -3,9 +3,10 @@ import type { ID } from '../data/types';
 
 export type Overlay =
   | { kind: 'lesson'; id: ID }
-  | { kind: 'newLesson'; start?: string; studentId?: ID; groupId?: ID }
+  | { kind: 'newLesson'; start?: string; studentId?: ID; groupId?: ID; trial?: boolean }
   | { kind: 'student'; id?: ID }
-  | { kind: 'group'; id?: ID };
+  | { kind: 'group'; id?: ID }
+  | { kind: 'payment'; id?: ID; studentId?: ID; lessons?: number };
 
 interface Toast {
   id: number;

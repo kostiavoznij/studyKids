@@ -1,7 +1,7 @@
 import { Plus, Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
-import { CURRENCIES, DURATIONS, STUDENT_COLORS } from '../data/constants';
-import type { Currency, ID, Slot, Student } from '../data/types';
+import { DURATIONS, STUDENT_COLORS } from '../data/constants';
+import type { Billing, ID, Slot, Student } from '../data/types';
 import { WEEKDAYS_LONG, cap } from '../lib/dates';
 import { uid } from '../lib/format';
 import { Avatar } from './components';
@@ -102,49 +102,45 @@ export function DurationChips({ value, onChange }: { value: number; onChange: (v
 
 export function PriceField({
   price,
-  currency,
   onPrice,
-  onCurrency,
   label = 'Ціна за урок',
 }: {
   price: number;
-  currency: Currency;
   onPrice: (v: number) => void;
-  onCurrency?: (c: Currency) => void;
   label?: string;
 }) {
   return (
-    <div className="row">
-      <label className="field" style={{ flex: 1.4 }}>
-        <span className="field-label">{label}</span>
+    <label className="field">
+      <span className="field-label">{label}</span>
+      <span className="input-wrap">
         <input
           className="input"
           type="number"
-          inputMode="decimal"
+          inputMode="numeric"
           min={0}
           value={Number.isFinite(price) ? price : ''}
           onChange={(e) => onPrice(e.target.value === '' ? 0 : Number(e.target.value))}
         />
-      </label>
-      {onCurrency ? (
-        <label className="field">
-          <span className="field-label">Валюта</span>
-          <select className="select" value={currency} onChange={(e) => onCurrency(e.target.value as Currency)}>
-            {CURRENCIES.map((c) => (
-              <option key={c.code} value={c.code}>
-                {c.symbol} {c.code}
-              </option>
-            ))}
-          </select>
-        </label>
-      ) : (
-        <div className="field" style={{ flex: 0.5 }}>
-          <span className="field-label">&nbsp;</span>
-          <span className="input" style={{ display: 'grid', placeItems: 'center', fontWeight: 800 }}>
-            {CURRENCIES.find((c) => c.code === currency)?.symbol}
-          </span>
-        </div>
-      )}
+        <span className="input-suffix">₴</span>
+      </span>
+    </label>
+  );
+}
+
+export const BILLINGS: { value: Billing; label: string; hint: string }[] = [
+  { value: 'prepaid', label: 'Наперед, пакетом', hint: 'Батьки платять за кілька уроків одразу — застосунок рахує, скільки ще оплачено' },
+  { value: 'after', label: 'Після кожного уроку', hint: 'Оплата за кожен урок окремо — у картці уроку є кнопка «Оплатили»' },
+];
+
+export function BillingPicker({ value, onChange }: { value: Billing; onChange: (b: Billing) => void }) {
+  return (
+    <div className="billing-picker" role="radiogroup" aria-label="Як платять">
+      {BILLINGS.map((b) => (
+        <button key={b.value} role="radio" aria-checked={value === b.value} onClick={() => onChange(b.value)}>
+          <b>{b.label}</b>
+          <span>{b.hint}</span>
+        </button>
+      ))}
     </div>
   );
 }

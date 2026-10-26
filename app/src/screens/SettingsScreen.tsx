@@ -1,13 +1,14 @@
-import { Check, Cloud, Download, Laptop, Smartphone, Upload } from 'lucide-react';
+import { Check, Download, Laptop, Smartphone, Upload } from 'lucide-react';
 import { useRef, type CSSProperties } from 'react';
-import { CURRENCIES, THEMES } from '../data/constants';
-import { useLiveStudents } from '../data/selectors';
+import { THEMES } from '../data/constants';
 import { useData } from '../data/store';
-import type { Currency, ThemeId } from '../data/types';
+import type { ThemeId } from '../data/types';
 import { todayKey } from '../lib/dates';
-import { currencySymbol } from '../lib/format';
-import { DurationChips } from '../ui/fields';
+import { LESSONS, nPlural } from '../lib/format';
+import { BillingPicker, DurationChips, PriceField } from '../ui/fields';
 import { ask, useUi } from '../ui/uiStore';
+import { SyncSection } from './SyncSection';
+import { useSync } from '../data/sync';
 
 export function SettingsScreen() {
   const settings = useData((s) => s.settings);
@@ -18,11 +19,8 @@ export function SettingsScreen() {
   const exportData = useData((s) => s.exportData);
   const importData = useData((s) => s.importData);
   const notify = useUi((s) => s.notify);
-  const students = useLiveStudents();
   const file = useRef<HTMLInputElement>(null);
-
-  const used = new Set<Currency>(students.map((s) => s.currency));
-  const rateCurrencies = CURRENCIES.filter((c) => c.code !== 'UAH' && (used.has(c.code) || settings.baseCurrency === c.code));
+  const connected = useSync((s) => s.configured);
 
   const download = () => {
     const blob = new Blob([exportData()], { type: 'application/json' });
@@ -74,53 +72,24 @@ export function SettingsScreen() {
         </section>
 
         <section className="section card">
-          <h2 className="set-title">Гроші</h2>
+          <h2 className="set-title">Нові учні та оплати</h2>
           <div className="row">
+            <PriceField label="Ціна нового учня" price={settings.defaultPrice} onPrice={(v) => update({ defaultPrice: v })} />
             <label className="field">
-              <span className="field-label">Рахувати суми в</span>
-              <select className="select" value={settings.baseCurrency} onChange={(e) => update({ baseCurrency: e.target.value as Currency })}>
-                {CURRENCIES.map((c) => (
-                  <option key={c.code} value={c.code}>
-                    {c.symbol} {c.label}
+              <span className="field-label">Попередження про оплату</span>
+              <select className="select" value={settings.lowBalanceLessons} onChange={(e) => update({ lowBalanceLessons: Number(e.target.value) })}>
+                {[0, 1, 2, 3].map((n) => (
+                  <option key={n} value={n}>
+                    {n === 0 ? 'коли уроки закінчились' : `коли лишилось ${nPlural(n, LESSONS)}`}
                   </option>
                 ))}
               </select>
             </label>
-            <label className="field">
-              <span className="field-label">Ціна нового учня</span>
-              <input
-                className="input"
-                type="number"
-                inputMode="decimal"
-                value={settings.defaultPrice}
-                onChange={(e) => update({ defaultPrice: Number(e.target.value) || 0 })}
-              />
-            </label>
           </div>
-          {rateCurrencies.length > 0 && (
-            <div className="field">
-              <span className="field-label">Курси для підрахунку (задаються вручну)</span>
-              <div className="rates">
-                {rateCurrencies.map((c) => (
-                  <label key={c.code} className="rate">
-                    <span>1 {c.symbol} =</span>
-                    <input
-                      className="input"
-                      type="number"
-                      inputMode="decimal"
-                      step="0.1"
-                      value={settings.rates[c.code]}
-                      onChange={(e) => update({ rates: { ...settings.rates, [c.code]: Number(e.target.value) || 0 } })}
-                    />
-                    <span>₴</span>
-                  </label>
-                ))}
-              </div>
-              <span className="field-hint">
-                Учні, які платять у {rateCurrencies.map((c) => currencySymbol(c.code)).join(', ')}, рахуються в загальних сумах за цим курсом.
-              </span>
-            </div>
-          )}
+          <div className="field">
+            <span className="field-label">Як зазвичай платять нові учні</span>
+            <BillingPicker value={settings.defaultBilling} onChange={(b) => update({ defaultBilling: b })} />
+          </div>
           <div className="field">
             <span className="field-label">Тривалість уроку за замовчуванням</span>
             <DurationChips value={settings.defaultDuration} onChange={(v) => update({ defaultDuration: v })} />
@@ -166,18 +135,7 @@ export function SettingsScreen() {
           </p>
         </section>
 
-        <section className="section card">
-          <h2 className="set-title">
-            <Cloud size={20} /> Синхронізація
-          </h2>
-          <p className="muted" style={{ fontSize: 14 }}>
-            Зараз дані зберігаються тільки на цьому пристрої. Наступним кроком підключимо Google Таблицю — тоді телефон і ноутбук бачитимуть одне й те саме, а в Google Календарі
-            з'являтимуться нагадування.
-          </p>
-          <span className="badge accent" style={{ marginTop: 10 }}>
-            Скоро
-          </span>
-        </section>
+        <SyncSection />
 
         <section className="section card">
           <h2 className="set-title">Дані</h2>
@@ -209,9 +167,11 @@ export function SettingsScreen() {
                 Почати з чистого аркуша
               </button>
             ) : (
-              <button className="btn btn-ghost" onClick={restoreDemo}>
-                Показати демо-дані
-              </button>
+              !connected && (
+                <button className="btn btn-ghost" onClick={restoreDemo}>
+                  Показати демо-дані
+                </button>
+              )
             )}
             {seeded !== 'demo' && (
               <button className="btn btn-danger-soft" onClick={startClean}>

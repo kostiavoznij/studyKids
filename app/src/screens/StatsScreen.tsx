@@ -1,7 +1,8 @@
 import { ChevronLeft, ChevronRight, CircleAlert, Info, TrendingDown, TrendingUp } from 'lucide-react';
 import { useState } from 'react';
-import { lessonsOfStudent, useLiveLessons, useLiveStudents } from '../data/selectors';
-import { deltaPct, insights, monthSeries, summarize, weekdayLoad } from '../data/stats';
+import { lessonsOfStudent, useLiveLessons, useLivePayments, useLiveStudents } from '../data/selectors';
+import { useAccounts } from '../data/billing';
+import { deltaPct, insights, monthSeries, received, summarize, trialConversion, weekdayLoad } from '../data/stats';
 import { useData } from '../data/store';
 import { periodLabel, periodRange, shiftPeriod, WEEKDAYS_SHORT, type Period } from '../lib/dates';
 import { compact, grade1, LESSONS, money, nPlural } from '../lib/format';
@@ -21,31 +22,44 @@ export function StatsScreen() {
   const lessons = useLiveLessons();
   const students = useLiveStudents();
   const rec = useData((s) => s.lessons);
-  const settings = useData((s) => s.settings);
+  const studentsRec = useData((s) => s.students);
+  const payments = useLivePayments();
+  const accounts = useAccounts();
   const now = useNow();
   const [period, setPeriod] = useState<Period>('month');
   const [anchor, setAnchor] = useState(() => new Date());
+  const [metric, setMetric] = useState<'earned' | 'received'>('earned');
 
   const cur = periodRange(period, anchor);
   const prev = periodRange(period, shiftPeriod(period, anchor, -1));
-  const a = summarize(lessons, settings, cur, now);
-  const b = summarize(lessons, settings, prev, now);
+  const a = summarize(lessons, cur, now);
+  const b = summarize(lessons, prev, now);
   const projected = a.earned + a.expected;
   const incomeDelta = deltaPct(projected, b.earned);
-  const notes = insights(lessons, students, settings, cur, prev, now);
-  const base = settings.baseCurrency;
+  const notes = insights(lessons, students, cur, prev, now);
+  const inflow = received(payments, cur);
+  const inflowPrev = received(payments, prev);
+  const conv = trialConversion(lessons, studentsRec, cur);
+
+  // Money held in advance and money owed, right now, across all families.
+  let prepaid = 0;
+  let owed = 0;
+  for (const acc of accounts.values()) {
+    if (acc.balance > 0) prepaid += acc.balance;
+    else owed += -acc.balance;
+  }
 
   const series =
     period === 'year'
-      ? monthSeries(lessons, settings, new Date(anchor.getFullYear(), 11, 1), 12, now)
-      : monthSeries(lessons, settings, anchor, 12, now);
+      ? monthSeries(lessons, payments, new Date(anchor.getFullYear(), 11, 1), 12, now)
+      : monthSeries(lessons, payments, anchor, 12, now);
   const load = weekdayLoad(lessons, cur);
 
   const rows = students
     .map((st) => {
       const ls = lessonsOfStudent(rec, st.id);
-      const x = summarize(ls, settings, cur, now, st.id);
-      const y = summarize(ls, settings, prev, now, st.id);
+      const x = summarize(ls, cur, now, st.id);
+      const y = summarize(ls, prev, now, st.id);
       return { st, x, y };
     })
     .filter((r) => r.x.total > 0 || r.y.done > 0)
@@ -73,12 +87,12 @@ export function StatsScreen() {
         </div>
 
         <div className="hero-card rise">
-          <div className="hero-label">Дохід</div>
-          <div className="hero-value">{money(projected, base)}</div>
+          <div className="hero-label">Дохід за проведені уроки</div>
+          <div className="hero-value">{money(projected)}</div>
           <div className="hero-sub">
             {a.expected > 0 ? (
               <>
-                зароблено {money(a.earned, base)} · ще заплановано {money(a.expected, base)}
+                зароблено {money(a.earned)} · ще заплановано {money(a.expected)}
               </>
             ) : (
               <>за {nPlural(a.done, LESSONS)}</>
@@ -90,16 +104,30 @@ export function StatsScreen() {
             ) : (
               <span className="faint">немає даних за попередній період</span>
             )}
-            {a.unpaid > 0 && <span className="badge warn">не оплачено {money(a.unpaid, base)}</span>}
+          </div>
+          <div className="hero-money">
+            <span>
+              надійшло оплат <b>{money(inflow.amount)}</b>
+            </span>
+            <span>
+              передоплата зараз <b>{money(prepaid)}</b>
+            </span>
+            {owed > 0.5 && (
+              <span className="bad">
+                борги <b>{money(owed)}</b>
+              </span>
+            )}
           </div>
         </div>
 
-        <div className="tiles three" style={{ marginTop: 12 }}>
+        <div className="tiles four" style={{ marginTop: 12 }}>
           <Tile label="Проведено уроків" value={a.done} sub={<><Delta pct={deltaPct(a.done + a.planned, b.done)} /> {a.planned > 0 ? `+ ${a.planned} попереду` : ''}</>} />
+          <Tile label="Надійшло оплат" value={<Money value={inflow.amount} />} sub={inflowPrev.amount ? <Delta pct={deltaPct(inflow.amount, inflowPrev.amount)} /> : `${inflow.count} оплат`} />
+          <Tile label="Пробні уроки" value={a.trials} sub={conv.trials ? `стали учнями: ${conv.converted} з ${conv.trials}` : 'знайомство з новими учнями'} />
+          <Tile label="Учнів на уроках" value={a.students} sub={b.students ? `було ${b.students}` : '—'} />
           <Tile label="Скасовано" value={a.cancelled} sub={a.cancelled ? `учнями ${a.cancelledByStudent} · мною ${a.cancelledByTeacher}` : 'без скасувань'} />
           <Tile label="Перенесено" value={a.moved} sub={b.moved ? `було ${b.moved}` : 'на інший час'} />
-          <Tile label="Учнів на уроках" value={a.students} sub={b.students ? `було ${b.students}` : '—'} />
-          <Tile label="Середня ціна уроку" value={a.avgPrice ? <Money value={a.avgPrice} /> : '—'} sub="з урахуванням валют" />
+          <Tile label="Середня ціна уроку" value={a.avgPrice ? <Money value={a.avgPrice} /> : '—'} sub="за проведений урок" />
           <Tile label="Засвоєння" value={a.avgGrade != null ? `${grade1(a.avgGrade)} з 5` : '—'} sub={b.avgGrade != null ? `було ${grade1(b.avgGrade)}` : 'середня оцінка'} />
         </div>
 
@@ -131,15 +159,20 @@ export function StatsScreen() {
         <div className="stats-charts">
           <div className="card">
             <div className="card-title">
-              <h3>Дохід по місяцях</h3>
-              <span className="faint" style={{ fontSize: 13 }}>
-                {period === 'year' ? anchor.getFullYear() : 'останні 12 місяців'}
-              </span>
+              <h3>{metric === 'earned' ? 'Зароблено' : 'Надійшло оплат'} по місяцях</h3>
+              <div className="seg seg-sm">
+                <button aria-pressed={metric === 'earned'} onClick={() => setMetric('earned')}>
+                  Уроки
+                </button>
+                <button aria-pressed={metric === 'received'} onClick={() => setMetric('received')}>
+                  Оплати
+                </button>
+              </div>
             </div>
             <ColumnChart
-              label="Дохід по місяцях"
-              data={series.map((p) => ({ key: p.key, label: p.label, title: p.longLabel, value: p.earned, highlight: p.current }))}
-              format={(v) => money(v, base)}
+              label={metric === 'earned' ? 'Зароблено по місяцях' : 'Надійшло оплат по місяцях'}
+              data={series.map((p) => ({ key: p.key, label: p.label, title: p.longLabel, value: p[metric], highlight: p.current }))}
+              format={(v) => money(v)}
               tickFormat={compact}
             />
           </div>
@@ -173,7 +206,7 @@ export function StatsScreen() {
                 <div className="list-main">
                   <div className="rank-top">
                     <span className="list-title">{st.name}</span>
-                    <span className="rank-money">{money(x.earned + x.expected, base)}</span>
+                    <span className="rank-money">{money(x.earned + x.expected)}</span>
                   </div>
                   <div className="rank-bar">
                     <span style={{ width: `${((x.earned + x.expected) / maxIncome) * 100}%` }} />

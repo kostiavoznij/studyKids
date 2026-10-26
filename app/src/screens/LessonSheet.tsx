@@ -1,11 +1,27 @@
 import { addDays, addWeeks, parseISO } from 'date-fns';
-import { Check, ChevronRight, Clock, CornerUpRight, Pencil, RotateCcw, Trash2, Users, X } from 'lucide-react';
+import {
+  Check,
+  ChevronRight,
+  ClipboardList,
+  Clock,
+  CornerUpRight,
+  Gift,
+  Pencil,
+  RotateCcw,
+  Sparkles,
+  Trash2,
+  UserCheck,
+  Users,
+  X,
+} from 'lucide-react';
 import { useState, type CSSProperties } from 'react';
-import { CANCEL_REASONS, MOVE_REASONS, zoneLabel } from '../data/constants';
+import { accountLabel, useAccounts } from '../data/billing';
+import { CANCEL_REASONS, MOVE_REASONS, TRIAL_LEVELS, TRIAL_OUTCOMES, zoneLabel } from '../data/constants';
+import { chargeOf, isTrial, plannedOf } from '../data/money';
 import { lessonColor, lessonsByDay, lessonTitle } from '../data/selectors';
 import { useData } from '../data/store';
 import type { Initiator, Lesson } from '../data/types';
-import { dayKey, endStamp, longDay, minutesOf, shortDay, timeInZone, timeOf, zoneDiffers } from '../lib/dates';
+import { dayKey, endStamp, longDay, minutesOf, shortDay, timeInZone, timeOf, todayKey, zoneDiffers } from '../lib/dates';
 import { money } from '../lib/format';
 import { Avatar, GradePicker, Segmented, Sheet, StatusBadge, Switch, useNow } from '../ui/components';
 import { DraftField, DurationChips } from '../ui/fields';
@@ -74,6 +90,7 @@ function MainStep({ lesson, onStep, onClose }: { lesson: Lesson; onStep: (s: Ste
   const notify = useUi((s) => s.notify);
   const now = useNow();
   const isGroup = !!lesson.groupId || lesson.participants.length > 1;
+  const trial = isTrial(lesson);
   const first = students[lesson.participants[0]?.studentId];
   const tz = !isGroup && first?.timezone && zoneDiffers(first.timezone) ? first.timezone : '';
 
@@ -106,6 +123,11 @@ function MainStep({ lesson, onStep, onClose }: { lesson: Lesson; onStep: (s: Ste
     <div className="ls-main">
       <div className="ls-status">
         <StatusBadge lesson={lesson} now={now} />
+        {trial && (
+          <span className="badge accent">
+            <Sparkles size={13} /> Пробний урок
+          </span>
+        )}
         {lesson.groupId && groups[lesson.groupId] && <span className="badge">Групове заняття</span>}
         {tz && (
           <span className="badge">
@@ -162,70 +184,38 @@ function MainStep({ lesson, onStep, onClose }: { lesson: Lesson; onStep: (s: Ste
         </div>
       )}
 
-      <div className="field" style={{ marginTop: 18 }}>
-        <span className="field-label">Тема уроку</span>
-        <DraftField label="Тема уроку" value={lesson.topic} placeholder="Напр.: Відмінки іменників" onCommit={(v) => updateLesson(lesson.id, { topic: v })} />
-      </div>
-      <div className="field">
-        <span className="field-label">Домашнє завдання</span>
-        <DraftField label="Домашнє завдання" multiline rows={2} value={lesson.homework} placeholder="Що задали" onCommit={(v) => updateLesson(lesson.id, { homework: v })} />
-      </div>
-
-      {!isGroup ? (
-        <div className="field">
-          <span className="field-label">Засвоєння теми</span>
-          <GradePicker value={lesson.participants[0]?.grade} onChange={(g) => updateParticipant(lesson.id, lesson.participants[0].studentId, { grade: g })} />
-        </div>
-      ) : null}
-
-      <div className="field">
-        <span className="field-label">Нотатка</span>
-        <DraftField label="Нотатка" multiline rows={2} value={lesson.note} placeholder="Як пройшов урок, на що звернути увагу" onCommit={(v) => updateLesson(lesson.id, { note: v })} />
-      </div>
-
-      <div className="section-title" style={{ marginTop: 22 }}>
-        <h3>{isGroup ? 'Учасники та оплата' : 'Оплата'}</h3>
-      </div>
-      <div className="list">
-        {lesson.participants.map((p) => {
-          const st = students[p.studentId];
-          const charged = lesson.status === 'cancelled' ? !!lesson.cancel?.charged : !p.absent;
-          return (
-            <div key={p.studentId} className="list-item" style={{ flexWrap: 'wrap' }}>
-              {isGroup && st && (
-                <button onClick={() => openStudent(st.id)} style={{ display: 'contents' }}>
-                  <Avatar name={st.name} color={st.color} size={34} />
-                </button>
-              )}
-              <div className="list-main">
-                {isGroup && <div className="list-title">{st?.name ?? '—'}</div>}
-                <div className={isGroup ? 'list-sub' : 'list-title'}>
-                  {money(p.price, p.currency)}
-                  {!charged && <span className="faint"> · не оплачується</span>}
-                </div>
-              </div>
-              {charged && (
-                <label className="pay-toggle">
-                  <span className={p.paid ? 'badge good' : 'badge warn'}>{p.paid ? 'Оплачено' : 'Не оплачено'}</span>
-                  <Switch checked={p.paid} label="Оплачено" onChange={(v) => updateParticipant(lesson.id, p.studentId, { paid: v })} />
-                </label>
-              )}
-              {isGroup && (
-                <div className="group-extra">
-                  <GradePicker value={p.grade} onChange={(g) => updateParticipant(lesson.id, p.studentId, { grade: g })} />
-                  <button
-                    className="chip sm"
-                    aria-pressed={!!p.absent}
-                    onClick={() => updateParticipant(lesson.id, p.studentId, { absent: !p.absent })}
-                  >
-                    {p.absent ? 'Не було на уроці' : 'Відмітити відсутність'}
-                  </button>
-                </div>
-              )}
+      {trial ? (
+        <TrialFields lesson={lesson} />
+      ) : (
+        <>
+          <div className="field" style={{ marginTop: 18 }}>
+            <span className="field-label">Тема уроку</span>
+            <DraftField label="Тема уроку" value={lesson.topic} placeholder="Напр.: Відмінки іменників" onCommit={(v) => updateLesson(lesson.id, { topic: v })} />
+          </div>
+          <div className="field">
+            <span className="field-label">Домашнє завдання</span>
+            <DraftField label="Домашнє завдання" multiline rows={2} value={lesson.homework} placeholder="Що задали" onCommit={(v) => updateLesson(lesson.id, { homework: v })} />
+          </div>
+          {!isGroup && (
+            <div className="field">
+              <span className="field-label">Засвоєння теми</span>
+              <GradePicker value={lesson.participants[0]?.grade} onChange={(g) => updateParticipant(lesson.id, lesson.participants[0].studentId, { grade: g })} />
             </div>
-          );
-        })}
-      </div>
+          )}
+          <div className="field">
+            <span className="field-label">Нотатка</span>
+            <DraftField label="Нотатка" multiline rows={2} value={lesson.note} placeholder="Як пройшов урок, на що звернути увагу" onCommit={(v) => updateLesson(lesson.id, { note: v })} />
+          </div>
+        </>
+      )}
+
+      {trial ? (
+        <div className="ls-free">
+          <Gift size={18} /> Пробний урок безкоштовний — у доходи й оплати не рахується
+        </div>
+      ) : (
+        <PaymentSection lesson={lesson} isGroup={isGroup} onOpenStudent={openStudent} />
+      )}
 
       {lesson.moves.length > 0 && (
         <>
@@ -275,6 +265,173 @@ function MainStep({ lesson, onStep, onClose }: { lesson: Lesson; onStep: (s: Ste
 }
 
 const isSingle = (l: Lesson) => !l.groupId && l.participants.length === 1;
+
+/* ---------- Payment ---------- */
+
+function PaymentSection({ lesson, isGroup, onOpenStudent }: { lesson: Lesson; isGroup: boolean; onOpenStudent: (id: string) => void }) {
+  const students = useData((s) => s.students);
+  const updateParticipant = useData((s) => s.updateParticipant);
+  const savePayment = useData((s) => s.savePayment);
+  const deletePayment = useData((s) => s.deletePayment);
+  const notify = useUi((s) => s.notify);
+  const open = useUi((s) => s.open);
+  const accounts = useAccounts();
+
+  const paidNow = (studentId: string, amount: number) => {
+    const id = savePayment({ studentId, amount, lessons: 1, date: todayKey(), note: '' });
+    notify(`Оплату внесено: ${money(amount)}`, () => deletePayment(id));
+  };
+
+  return (
+    <>
+      <div className="section-title" style={{ marginTop: 22 }}>
+        <h3>{isGroup ? 'Учасники та оплата' : 'Оплата'}</h3>
+      </div>
+      <div className="list">
+        {lesson.participants.map((p) => {
+          const st = students[p.studentId];
+          const a = accounts.get(p.studentId);
+          const charge = chargeOf(lesson, p);
+          const planned = plannedOf(lesson, p);
+          const free = charge === 0 && planned === 0;
+          const covered = !!a && (charge > 0 ? a.covered.has(lesson.id) : a.coveredPlanned.has(lesson.id));
+          const state = free
+            ? { text: 'не оплачується', tone: '' }
+            : covered
+              ? { text: charge > 0 ? 'оплачено' : 'оплачено наперед', tone: 'good' }
+              : charge > 0
+                ? { text: 'не оплачено', tone: 'bad' }
+                : st?.billing === 'after'
+                  ? { text: 'оплата після уроку', tone: '' }
+                  : { text: 'ще не оплачено', tone: 'warn' };
+          const label = st && a ? accountLabel(a, st) : null;
+          return (
+            <div key={p.studentId} className="list-item pay-item">
+              {isGroup && st && (
+                <button onClick={() => onOpenStudent(st.id)} style={{ display: 'contents' }}>
+                  <Avatar name={st.name} color={st.color} size={34} />
+                </button>
+              )}
+              <div className="list-main">
+                <div className="list-title">
+                  {isGroup ? `${st?.name ?? '—'} · ` : ''}
+                  {money(p.price)} <span className={`badge ${state.tone}`}>{state.text}</span>
+                </div>
+                {label && (
+                  <div className="list-sub" style={{ whiteSpace: 'normal' }}>
+                    Рахунок: <span className={`pay-state ${label.tone}`}>{label.text}</span>
+                  </div>
+                )}
+              </div>
+              {!free && !covered && st && (
+                <div className="pay-actions">
+                  <button className="btn btn-sm btn-primary" onClick={() => paidNow(st.id, p.price)}>
+                    Оплатили
+                  </button>
+                  <button className="btn btn-sm btn-ghost" onClick={() => open({ kind: 'payment', studentId: st.id })}>
+                    Пакет
+                  </button>
+                </div>
+              )}
+              {isGroup && (
+                <div className="group-extra">
+                  <GradePicker value={p.grade} onChange={(g) => updateParticipant(lesson.id, p.studentId, { grade: g })} />
+                  <button className="chip sm" aria-pressed={!!p.absent} onClick={() => updateParticipant(lesson.id, p.studentId, { absent: !p.absent })}>
+                    {p.absent ? 'Не було на уроці' : 'Відмітити відсутність'}
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+/* ---------- Trial report ---------- */
+
+function TrialFields({ lesson }: { lesson: Lesson }) {
+  const students = useData((s) => s.students);
+  const updateTrial = useData((s) => s.updateTrial);
+  const setStudentStatus = useData((s) => s.setStudentStatus);
+  const open = useUi((s) => s.open);
+  const notify = useUi((s) => s.notify);
+  const r = lesson.trial ?? { level: '', strengths: '', weaknesses: '', plan: '' };
+  const st = students[lesson.participants[0]?.studentId];
+
+  return (
+    <div className="trial-report">
+      <div className="step-head" style={{ marginBottom: 12, marginTop: 18 }}>
+        <ClipboardList size={20} />
+        <h3>Звіт пробного уроку</h3>
+      </div>
+
+      <div className="field">
+        <span className="field-label">Рівень знань</span>
+        <div className="chips">
+          {TRIAL_LEVELS.map((lv) => (
+            <button key={lv} className="chip sm" aria-pressed={r.level === lv} onClick={() => updateTrial(lesson.id, { level: r.level === lv ? '' : lv })}>
+              {lv}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="field">
+        <span className="field-label">Сильні сторони</span>
+        <DraftField label="Сильні сторони" multiline rows={2} value={r.strengths} placeholder="Що вже добре виходить" onCommit={(v) => updateTrial(lesson.id, { strengths: v })} />
+      </div>
+      <div className="field">
+        <span className="field-label">Що підтягнути</span>
+        <DraftField label="Що підтягнути" multiline rows={2} value={r.weaknesses} placeholder="Слабкі сторони, прогалини" onCommit={(v) => updateTrial(lesson.id, { weaknesses: v })} />
+      </div>
+      <div className="field">
+        <span className="field-label">Рекомендації та план занять</span>
+        <DraftField label="План" multiline rows={2} value={r.plan} placeholder="Як часто, над чим працюємо" onCommit={(v) => updateTrial(lesson.id, { plan: v })} />
+      </div>
+      <div className="field">
+        <span className="field-label">Результат</span>
+        <div className="chips">
+          {TRIAL_OUTCOMES.map((o) => (
+            <button key={o.value} className="chip" aria-pressed={r.outcome === o.value} onClick={() => updateTrial(lesson.id, { outcome: r.outcome === o.value ? undefined : o.value })}>
+              {o.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {st && st.status === 'trial' && r.outcome === 'continue' && (
+        <div className="banner" style={{ marginTop: 14 }}>
+          <UserCheck size={20} />
+          <span style={{ flex: 1 }}>Вкажіть ціну та постійний розклад — і уроки з'являться в календарі.</span>
+          <button
+            className="btn btn-sm btn-primary"
+            onClick={() => {
+              setStudentStatus(st.id, 'active');
+              open({ kind: 'student', id: st.id });
+            }}
+          >
+            Почати заняття
+          </button>
+        </div>
+      )}
+      {st && st.status === 'trial' && r.outcome === 'declined' && (
+        <div className="banner warn" style={{ marginTop: 14 }}>
+          <span style={{ flex: 1 }}>{st.name} не продовжує — можна прибрати з учнів в архів.</span>
+          <button
+            className="btn btn-sm btn-ghost"
+            onClick={() => {
+              setStudentStatus(st.id, 'archived');
+              notify(`${st.name}: в архіві`);
+            }}
+          >
+            В архів
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 /* ---------- Move ---------- */
 

@@ -10,8 +10,7 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { colorHex } from '../data/constants';
-import { useData } from '../data/store';
-import type { Currency, Lesson } from '../data/types';
+import type { Lesson } from '../data/types';
 import { initials, money } from '../lib/format';
 import { useUi } from './uiStore';
 
@@ -24,9 +23,8 @@ export function Avatar({ name, color, size = 40 }: { name: string; color: string
   );
 }
 
-export function Money({ value, currency }: { value: number; currency?: Currency }) {
-  const base = useData((s) => s.settings.baseCurrency);
-  return <>{money(value, currency ?? base)}</>;
+export function Money({ value }: { value: number }) {
+  return <>{money(value)}</>;
 }
 
 export function Delta({ pct, upIsGood = true, suffix }: { pct: number | null; upIsGood?: boolean; suffix?: string }) {

@@ -1,20 +1,18 @@
-import { CURRENCIES } from '../data/constants';
-import type { Currency } from '../data/types';
+const NNBSP = ' ';
+const NBSP = ' ';
 
-const group = (n: number) => Math.round(n).toLocaleString('uk-UA').replace(/\s/g, ' ');
+const group = (n: number) => Math.round(n).toLocaleString('uk-UA').replace(/\s/g, NNBSP);
 
-export const currencySymbol = (c: Currency) => CURRENCIES.find((x) => x.code === c)?.symbol ?? c;
-
-/** «2 400 ₴», «18 €», «20 $» */
-export function money(amount: number, currency: Currency): string {
-  return `${group(amount)} ${currencySymbol(currency)}`;
+/** «2 400 ₴» — every payment is in hryvnias. */
+export function money(amount: number): string {
+  return `${group(amount)}${NBSP}₴`;
 }
 
 /** Short form for tight spots: «2,4 тис» */
 export function compact(n: number): string {
   const abs = Math.abs(n);
-  if (abs >= 1_000_000) return `${trim(n / 1_000_000)} млн`;
-  if (abs >= 1_000) return `${trim(n / 1_000)} тис`;
+  if (abs >= 1_000_000) return `${trim(n / 1_000_000)}${NBSP}млн`;
+  if (abs >= 1_000) return `${trim(n / 1_000)}${NBSP}тис`;
   return String(Math.round(n));
 }
 
@@ -41,6 +39,7 @@ export const LESSONS: [string, string, string] = ['урок', 'уроки', 'у�
 export const TOPICS: [string, string, string] = ['тема', 'теми', 'тем'];
 export const STUDENTS: [string, string, string] = ['учень', 'учні', 'учнів'];
 export const DAYS: [string, string, string] = ['день', 'дні', 'днів'];
+export const TRIALS: [string, string, string] = ['пробний', 'пробні', 'пробних'];
 
 export function initials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);

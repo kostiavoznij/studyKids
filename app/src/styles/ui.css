@@ -487,11 +487,19 @@
 .row {
   display: flex;
   gap: 10px;
+  /* bottom-aligned, so inputs line up even when one label wraps to two lines */
+  align-items: flex-end;
 }
 
 .row > * {
   flex: 1;
   min-width: 0;
+}
+
+/* Fields side by side share one baseline: the stacking gap above applies only between rows. */
+.row > .field,
+.row > .field + .field {
+  margin-top: 0;
 }
 
 .chips {

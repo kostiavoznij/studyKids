@@ -1,13 +1,4 @@
-import type { Currency, Settings, ThemeId } from './types';
-
-export const CURRENCIES: { code: Currency; symbol: string; label: string }[] = [
-  { code: 'UAH', symbol: '₴', label: 'Гривня' },
-  { code: 'EUR', symbol: '€', label: 'Євро' },
-  { code: 'USD', symbol: '$', label: 'Долар США' },
-  { code: 'PLN', symbol: 'zł', label: 'Злотий' },
-  { code: 'GBP', symbol: '£', label: 'Фунт' },
-  { code: 'CAD', symbol: 'C$', label: 'Канадський долар' },
-];
+import type { Settings, ThemeId, TrialOutcome } from './types';
 
 export const STUDENT_COLORS: { key: string; hex: string }[] = [
   { key: 'violet', hex: '#7c6cf2' },
@@ -70,12 +61,23 @@ export const THEMES: { id: ThemeId; label: string }[] = [
   { id: 'rose', label: 'Пудрова' },
 ];
 
+export const TRIAL_LEVELS = ['Початковий', 'Нижче вікової норми', 'Відповідає віку', 'Вище вікової норми'];
+
+export const TRIAL_OUTCOMES: { value: TrialOutcome; label: string }[] = [
+  { value: 'continue', label: 'Продовжуємо' },
+  { value: 'thinking', label: 'Думають' },
+  { value: 'declined', label: 'Не продовжили' },
+];
+
+/** Lesson packages offered when recording a payment. */
+export const PACKAGES = [1, 4, 8, 12];
+
 export const DEFAULT_SETTINGS: Settings = {
   theme: 'dark',
-  baseCurrency: 'UAH',
-  rates: { UAH: 1, EUR: 48, USD: 41.5, PLN: 11.3, GBP: 55, CAD: 30 },
   defaultPrice: 400,
   defaultDuration: 60,
+  defaultBilling: 'prepaid',
+  lowBalanceLessons: 1,
   dayStart: 9,
   dayEnd: 21,
   horizonWeeks: 6,

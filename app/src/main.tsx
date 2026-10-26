@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client';
 import { registerSW } from 'virtual:pwa-register';
 import { App } from './App';
 import { useData } from './data/store';
+import { startSync } from './data/sync';
 import './styles/themes.css';
 import './styles/base.css';
 import './styles/ui.css';
@@ -22,6 +23,8 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('storage', (e) => {
   if (e.key === 'uroky-data') useData.persist.rehydrate();
 });
+
+startSync();
 
 registerSW({ immediate: true });
 

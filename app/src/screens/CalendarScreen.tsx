@@ -10,13 +10,26 @@ import {
   startOfMonth,
   startOfWeek,
 } from 'date-fns';
-import { CircleAlert, CircleCheck, CircleDashed, ChevronLeft, ChevronRight, CornerUpRight, Plus, Users } from 'lucide-react';
-import { useEffect, useRef, type CSSProperties, type MouseEvent, type Ref } from 'react';
-import { lessonValue } from '../data/money';
+import {
+  CircleAlert,
+  CircleCheck,
+  CircleDashed,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  CornerUpRight,
+  Plus,
+  Sparkles,
+  Users,
+  Wallet,
+} from 'lucide-react';
+import { useEffect, useRef, useState, type CSSProperties, type MouseEvent, type Ref } from 'react';
+import { accountLabel, needsPayment, useAccounts, type Account } from '../data/billing';
+import { isTrial, lessonValue } from '../data/money';
 import { lessonColor, lessonsByDay, lessonTitle, liveLessons } from '../data/selectors';
 import { summarize } from '../data/stats';
 import { useData } from '../data/store';
-import type { CalendarView, Lesson } from '../data/types';
+import type { CalendarView, Lesson, Student } from '../data/types';
 import {
   cap,
   dayKey,
@@ -31,9 +44,11 @@ import {
   weekdayShort,
   isoWeekday,
 } from '../lib/dates';
-import { LESSONS, money, nPlural, tiny } from '../lib/format';
-import { Money, Segmented, Tile, useNow, useSwipe } from '../ui/components';
+import { LESSONS, money, nPlural, tiny, TRIALS } from '../lib/format';
+import { Avatar, Money, Segmented, Tile, useNow, useSwipe } from '../ui/components';
+import { navigate } from '../ui/router';
 import { useUi } from '../ui/uiStore';
+import { SyncBadge } from './SyncSection';
 
 const VIEWS: { value: CalendarView; label: string }[] = [
   { value: 'day', label: 'День' },
@@ -90,6 +105,7 @@ export function CalendarScreen() {
               <h1>{cap(fmt(date, 'LLLL'))}</h1>
               <span className="year">{fmt(date, 'yyyy')}</span>
             </div>
+            <SyncBadge />
             {!isCurrent && (
               <button className="btn btn-soft btn-sm" onClick={() => setDay(today)}>
                 Сьогодні
@@ -162,22 +178,22 @@ function WeekStrip({
 /* ---------- Day ---------- */
 
 function DayView({ day, byDay, now }: { day: string; byDay: Map<string, Lesson[]>; now: string }) {
-  const settings = useData((s) => s.settings);
   const rec = useData((s) => s.lessons);
   const markManyDone = useData((s) => s.markManyDone);
   const putLesson = useData((s) => s.putLesson);
   const setDay = useUi((s) => s.setDay);
   const notify = useUi((s) => s.notify);
   const lessons = byDay.get(day) ?? [];
-  const sum = summarize(lessons, settings, null, now);
+  const sum = summarize(lessons, null, now);
   const activeCount = sum.done + sum.planned;
   const today = now.slice(0, 10);
   const swipe = useSwipe((dir) => setDay(dayKey(addDays(parseISO(day), dir))));
 
-  const unmarked = lessons.filter((l) => l.status === 'planned' && endStamp(l.start, l.duration) <= now);
+  // Trial lessons need a report, so they are not bulk-marked.
+  const unmarked = lessons.filter((l) => l.status === 'planned' && !isTrial(l) && endStamp(l.start, l.duration) <= now);
   const olderUnmarked =
     day === today
-      ? liveLessons(rec).filter((l) => l.status === 'planned' && l.start.slice(0, 10) < today)
+      ? liveLessons(rec).filter((l) => l.status === 'planned' && !isTrial(l) && l.start.slice(0, 10) < today)
       : [];
 
   const markAll = (list: Lesson[]) => {
@@ -200,11 +216,16 @@ function DayView({ day, byDay, now }: { day: string; byDay: Map<string, Lesson[]
         </div>
       )}
 
+      {day === today && <PaymentReminders />}
+
       <div className="card day-summary">
         <div className="ds-top">
           <div>
             <div className="ds-date">{longDay(day)}</div>
-            <div className="ds-main">{activeCount ? nPlural(activeCount, LESSONS) : 'Вільний день'}</div>
+            <div className="ds-main">
+              {activeCount ? nPlural(activeCount, LESSONS) : sum.trials ? '' : 'Вільний день'}
+              {sum.trials > 0 && <span className="ds-trial">{activeCount ? ' + ' : ''}{nPlural(sum.trials, TRIALS)}</span>}
+            </div>
           </div>
           {sum.earned + sum.expected > 0 && (
             <div className="ds-money">
@@ -213,7 +234,7 @@ function DayView({ day, byDay, now }: { day: string; byDay: Map<string, Lesson[]
               </div>
               <div className="small">
                 {sum.expected > 0 && sum.earned > 0
-                  ? `зароблено ${money(sum.earned, settings.baseCurrency)}`
+                  ? `зароблено ${money(sum.earned)}`
                   : sum.earned > 0
                     ? 'зароблено'
                     : 'заплановано'}
@@ -245,6 +266,48 @@ function DayView({ day, byDay, now }: { day: string; byDay: Map<string, Lesson[]
       </div>
 
       <Timeline day={day} lessons={lessons} now={now} />
+    </div>
+  );
+}
+
+/** Families whose prepaid lessons ran out (or who owe) — a one-line banner on today's page. */
+function PaymentReminders() {
+  const students = useData((s) => s.students);
+  const open = useUi((s) => s.open);
+  const accounts = useAccounts();
+  const list = needsPayment(accounts, students);
+  const [expanded, setExpanded] = useState(false);
+  if (list.length === 0) return null;
+  const names = list.slice(0, 3).map((a) => students[a.studentId].name);
+  return (
+    <div className="pay-remind" data-open={expanded ? '' : undefined}>
+      <button className="pay-banner" onClick={() => setExpanded((v) => !v)} aria-expanded={expanded}>
+        <Wallet size={18} />
+        <span>
+          Нагадати про оплату: <b>{names.join(', ')}</b>
+          {list.length > 3 && ` +${list.length - 3}`}
+        </span>
+        <ChevronDown size={18} className="pay-chevron" />
+      </button>
+      {expanded &&
+        list.map((a) => {
+          const st = students[a.studentId];
+          const label = accountLabel(a, st);
+          return (
+            <div key={a.studentId} className="pay-row">
+              <button className="pay-who" onClick={() => navigate(`/students/${st.id}`)}>
+                <Avatar name={st.name} color={st.color} size={32} />
+                <span>
+                  <b>{st.name}</b>
+                  <span className={`pay-state ${label.tone}`}>{label.text}</span>
+                </span>
+              </button>
+              <button className="btn btn-sm btn-soft" onClick={() => open({ kind: 'payment', studentId: st.id })}>
+                Внести
+              </button>
+            </div>
+          );
+        })}
     </div>
   );
 }
@@ -375,9 +438,10 @@ function LessonBlock({
 }) {
   const students = useData((s) => s.students);
   const groups = useData((s) => s.groups);
-  const settings = useData((s) => s.settings);
   const open = useUi((s) => s.open);
+  const accounts = useAccounts();
   const title = lessonTitle(lesson, students, groups);
+  const trial = isTrial(lesson);
   const color = lessonColor(lesson, students, groups);
   const end = endStamp(lesson.start, lesson.duration);
   const status = lesson.status === 'planned' && end <= now ? 'unmarked' : lesson.status;
@@ -386,13 +450,18 @@ function LessonBlock({
   const detail =
     status === 'cancelled'
       ? `скасовано${lesson.cancel?.reason ? ` · ${lesson.cancel.reason.toLowerCase()}` : ''}`
-      : lesson.topic || subject;
+      : trial
+        ? 'пробний урок'
+        : lesson.topic || subject;
+  const unpaid = !trial && status !== 'cancelled' && isUnpaid(lesson, students, accounts);
   const height = typeof style.height === 'number' ? style.height : 60;
   const compactRow = height < 44;
-  const value = lessonValue(lesson, settings);
+  const value = lessonValue(lesson);
 
   const icon =
-    status === 'done' ? (
+    trial && status !== 'cancelled' ? (
+      <Sparkles size={narrow ? 13 : 16} strokeWidth={2.4} />
+    ) : status === 'done' ? (
       <CircleCheck size={narrow ? 13 : 17} strokeWidth={2.4} />
     ) : status === 'unmarked' ? (
       <CircleDashed size={narrow ? 13 : 17} strokeWidth={2.4} />
@@ -405,6 +474,7 @@ function LessonBlock({
       ref={refEl}
       className={`lesson-block${compactRow ? ' compact' : ''}`}
       data-status={status}
+      data-kind={trial ? 'trial' : undefined}
       style={{ ...style, '--c': color, animationDelay: `${delay}ms` } as CSSProperties}
       onClick={(e) => {
         e.stopPropagation();
@@ -416,7 +486,12 @@ function LessonBlock({
         {lesson.groupId && <Users size={narrow ? 11 : 14} strokeWidth={2.4} style={{ flex: 'none' }} />}
         <span className="lb-name">{title}</span>
         {!narrow && !compactRow && value > 0 && status !== 'cancelled' && (
-          <span className="lb-price">{money(value, settings.baseCurrency)}</span>
+          <span className="lb-price">{money(value)}</span>
+        )}
+        {unpaid && (
+          <span className="lb-unpaid" title="Не оплачено">
+            <Wallet size={narrow ? 11 : 14} strokeWidth={2.4} />
+          </span>
         )}
         {icon && <span className="lb-icon">{icon}</span>}
       </span>
@@ -430,6 +505,20 @@ function LessonBlock({
       )}
     </button>
   );
+}
+
+/**
+ * A lesson the family hasn't paid for: after-the-fact for anyone who owes,
+ * in advance only for prepaying families (the others pay after the lesson).
+ */
+function isUnpaid(l: Lesson, students: Record<string, Student>, accounts: Map<string, Account>) {
+  if (l.groupId || l.participants.length !== 1) return false;
+  const p = l.participants[0];
+  const st = students[p.studentId];
+  const a = accounts.get(p.studentId);
+  if (!st || !a || p.price <= 0) return false;
+  if (l.status === 'done') return !a.covered.has(l.id);
+  return st.billing === 'prepaid' && !a.coveredPlanned.has(l.id);
 }
 
 /* ---------- Week ---------- */
@@ -448,7 +537,7 @@ function WeekView({ date, byDay, now }: { date: Date; byDay: Map<string, Lesson[
   const { startH, endH } = hourBounds(all, settings.dayStart, settings.dayEnd, hasToday ? minutesOf(now) : undefined);
   const height = (endH - startH) * WHOUR;
   const top = (min: number) => ((min - startH * 60) / 60) * WHOUR;
-  const sum = summarize(all, settings, null, now);
+  const sum = summarize(all, null, now);
   const today = now.slice(0, 10);
   const swipe = useSwipe((dir) => setDay(dayKey(addWeeks(date, dir))));
 
@@ -471,7 +560,7 @@ function WeekView({ date, byDay, now }: { date: Date; byDay: Map<string, Lesson[
         <div />
         {days.map((d) => {
           const k = dayKey(d);
-          const v = (byDay.get(k) ?? []).reduce((s, l) => s + lessonValue(l, settings), 0);
+          const v = (byDay.get(k) ?? []).reduce((s, l) => s + lessonValue(l), 0);
           return (
             <button key={k} className="wk-head" data-today={k === today ? '' : undefined} onClick={() => openDay(k)}>
               <span className="ws-wd">{weekdayShort(isoWeekday(d))}</span>
@@ -545,7 +634,6 @@ function SummaryCard({
   cancelled: number;
   moved: number;
 }) {
-  const base = useData((s) => s.settings.baseCurrency);
   return (
     <div className="card day-summary" style={{ marginBottom: 0 }}>
       <div className="ds-top">
@@ -555,8 +643,8 @@ function SummaryCard({
         </div>
         {earned + expected > 0 && (
           <div className="ds-money">
-            <div className="big">{money(earned + expected, base)}</div>
-            <div className="small">зароблено {money(earned, base)}</div>
+            <div className="big">{money(earned + expected)}</div>
+            <div className="small">зароблено {money(earned)}</div>
           </div>
         )}
       </div>
@@ -574,7 +662,6 @@ function SummaryCard({
 /* ---------- Month ---------- */
 
 function MonthView({ date, byDay, now }: { date: Date; byDay: Map<string, Lesson[]>; now: string }) {
-  const settings = useData((s) => s.settings);
   const students = useData((s) => s.students);
   const groups = useData((s) => s.groups);
   const rec = useData((s) => s.lessons);
@@ -583,7 +670,7 @@ function MonthView({ date, byDay, now }: { date: Date; byDay: Map<string, Lesson
   const ms = startOfMonth(date);
   const me = endOfMonth(date);
   const days = eachDayOfInterval({ start: startOfWeek(ms, WEEK_OPTS), end: endOfWeek(me, WEEK_OPTS) });
-  const sum = summarize(liveLessons(rec), settings, { from: dayKey(ms), to: dayKey(me) }, now);
+  const sum = summarize(liveLessons(rec), { from: dayKey(ms), to: dayKey(me) }, now);
   const today = now.slice(0, 10);
   const swipe = useSwipe((dir) => setDay(dayKey(addMonths(date, dir))));
 
@@ -598,7 +685,7 @@ function MonthView({ date, byDay, now }: { date: Date; byDay: Map<string, Lesson
         {days.map((d) => {
           const k = dayKey(d);
           const ls = byDay.get(k) ?? [];
-          const v = ls.reduce((s, l) => s + lessonValue(l, settings), 0);
+          const v = ls.reduce((s, l) => s + lessonValue(l), 0);
           return (
             <button
               key={k}
@@ -628,8 +715,8 @@ function MonthView({ date, byDay, now }: { date: Date; byDay: Map<string, Lesson
       </div>
 
       <div className="tiles four" style={{ marginTop: 16 }}>
-        <Tile label="Уроків" value={sum.done + sum.planned} sub={`проведено ${sum.done}`} />
-        <Tile label="Дохід" value={<Money value={sum.earned + sum.expected} />} sub={`зароблено ${money(sum.earned, settings.baseCurrency)}`} />
+        <Tile label="Уроків" value={sum.done + sum.planned} sub={`проведено ${sum.done}${sum.trials ? ` · пробних ${sum.trials}` : ''}`} />
+        <Tile label="Дохід" value={<Money value={sum.earned + sum.expected} />} sub={`зароблено ${money(sum.earned)}`} />
         <Tile
           label="Скасовано"
           value={sum.cancelled}

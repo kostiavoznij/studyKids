@@ -543,3 +543,36 @@
 .view-anim {
   animation: rise-in 0.35s cubic-bezier(0.2, 0.9, 0.25, 1) both;
 }
+
+/* ---------- trial lessons and unpaid marker ---------- */
+
+.lesson-block[data-kind='trial'] {
+  background: color-mix(in oklab, var(--accent) 10%, var(--surface));
+  border: 1.5px dashed color-mix(in oklab, var(--accent) 60%, transparent);
+  box-shadow: none;
+}
+
+.lesson-block[data-kind='trial']::before {
+  background: var(--accent);
+}
+
+.lesson-block[data-kind='trial'] .lb-icon {
+  color: var(--accent);
+}
+
+.lb-unpaid {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.wk-col .lb-unpaid {
+  width: 15px;
+  height: 15px;
+  border-radius: 4px;
+}

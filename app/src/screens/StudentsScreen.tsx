@@ -9,14 +9,17 @@ import {
   Phone,
   Plus,
   Search,
+  Sparkles,
   Trash2,
   Users,
   UserRound,
+  Wallet,
 } from 'lucide-react';
 import { useState } from 'react';
-import { zoneLabel } from '../data/constants';
-import { earnedBy } from '../data/money';
-import { lessonsOfStudent, useLiveGroups, useLiveStudents } from '../data/selectors';
+import { accountLabel, useAccounts, type Account } from '../data/billing';
+import { TRIAL_OUTCOMES, zoneLabel } from '../data/constants';
+import { chargeOf, isTrial } from '../data/money';
+import { lessonsOfStudent, livePayments, useLiveGroups, useLiveStudents } from '../data/selectors';
 import { monthSeries, summarize } from '../data/stats';
 import { useData } from '../data/store';
 import type { Lesson, Student, StudentStatus } from '../data/types';
@@ -40,12 +43,19 @@ import { useUi } from '../ui/uiStore';
 
 /* ---------- List ---------- */
 
+const STATUS_FILTERS: { value: StudentStatus; label: string }[] = [
+  { value: 'active', label: 'Займаються' },
+  { value: 'trial', label: 'Пробні' },
+  { value: 'paused', label: 'Пауза' },
+  { value: 'archived', label: 'Архів' },
+];
+
 export function StudentsScreen() {
   const students = useLiveStudents();
   const groups = useLiveGroups();
   const rec = useData((s) => s.lessons);
-  const settings = useData((s) => s.settings);
   const open = useUi((s) => s.open);
+  const accounts = useAccounts();
   const now = useNow();
   const [filter, setFilter] = useState<StudentStatus>('active');
   const [q, setQ] = useState('');
@@ -69,16 +79,13 @@ export function StudentsScreen() {
             <Search size={18} />
             <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Пошук" aria-label="Пошук учня" />
           </div>
-          <Segmented
-            label="Статус"
-            value={filter}
-            onChange={setFilter}
-            options={[
-              { value: 'active', label: `Займаються ${count('active')}` },
-              { value: 'paused', label: `Пауза ${count('paused')}` },
-              { value: 'archived', label: `Архів ${count('archived')}` },
-            ]}
-          />
+          <div className="chips status-chips" role="group" aria-label="Статус">
+            {STATUS_FILTERS.map((f) => (
+              <button key={f.value} className="chip sm" aria-pressed={filter === f.value} onClick={() => setFilter(f.value)}>
+                {f.label} <span className="chip-count">{count(f.value)}</span>
+              </button>
+            ))}
+          </div>
         </div>
 
         {list.length === 0 ? (
@@ -93,8 +100,9 @@ export function StudentsScreen() {
           <div className="student-grid">
             {list.map((s, i) => {
               const ls = lessonsOfStudent(rec, s.id);
-              const m = summarize(ls, settings, month, now, s.id);
-              const all = summarize(ls, settings, null, now, s.id);
+              const m = summarize(ls, month, now, s.id);
+              const a = accounts.get(s.id);
+              const label = a && s.status === 'active' && a.state !== 'new' ? accountLabel(a, s) : null;
               return (
                 <button key={s.id} className="student-card rise" style={{ animationDelay: `${i * 25}ms` }} onClick={() => navigate(`/students/${s.id}`)}>
                   <Avatar name={s.name} color={s.color} size={48} />
@@ -116,7 +124,12 @@ export function StudentsScreen() {
                       <Money value={m.earned + m.expected} />
                     </div>
                     <div className="faint">{nPlural(m.done + m.planned, LESSONS)} за місяць</div>
-                    {all.unpaid > 0 && <span className="badge warn" style={{ marginTop: 4 }}>борг {money(all.unpaid, settings.baseCurrency)}</span>}
+                    {s.status === 'trial' && (
+                      <span className="badge accent" style={{ marginTop: 4 }}>
+                        <Sparkles size={12} /> пробний
+                      </span>
+                    )}
+                    {label && label.tone !== 'good' && <span className={`badge ${label.tone === 'neutral' ? '' : label.tone} sc-pay`}>{label.text}</span>}
                   </div>
                 </button>
               );
@@ -146,7 +159,7 @@ export function StudentsScreen() {
                   </div>
                 </div>
                 <div className="list-end">
-                  <div style={{ fontWeight: 700 }}>{money(g.price, g.currency)}</div>
+                  <div style={{ fontWeight: 700 }}>{money(g.price)}</div>
                   <div className="faint" style={{ fontSize: 12.5 }}>
                     {g.schedule.map((sl) => `${weekdayShort(sl.weekday)} ${sl.time}`).join(', ')}
                   </div>
@@ -162,14 +175,14 @@ export function StudentsScreen() {
 
 /* ---------- Student page ---------- */
 
-type Tab = 'overview' | 'lessons' | 'topics' | 'notes';
+type Tab = 'overview' | 'lessons' | 'topics' | 'payments' | 'notes';
 type LessonFilter = 'all' | 'unpaid' | 'cancelled' | 'moved';
 
 export function StudentPage({ id }: { id: string }) {
   const st = useData((s) => s.students[id]);
   const rec = useData((s) => s.lessons);
-  const settings = useData((s) => s.settings);
   const open = useUi((s) => s.open);
+  const accounts = useAccounts();
   const now = useNow();
   const [tab, setTab] = useState<Tab>('overview');
   const [filter, setFilter] = useState<LessonFilter>('all');
@@ -190,13 +203,15 @@ export function StudentPage({ id }: { id: string }) {
   }
 
   const lessons = lessonsOfStudent(rec, id);
-  const total = summarize(lessons, settings, null, now, id);
+  const total = summarize(lessons, null, now, id);
   const curR = periodRange('month', new Date());
   const prevR = periodRange('month', shiftPeriod('month', new Date(), -1));
-  const cur = summarize(lessons, settings, curR, now, id);
-  const prev = summarize(lessons, settings, prevR, now, id);
+  const cur = summarize(lessons, curR, now, id);
+  const prev = summarize(lessons, prevR, now, id);
   const tz = st.timezone && zoneDiffers(st.timezone) ? st.timezone : '';
   const c = st.contact;
+  const account = accounts.get(id);
+  const payLabel = account ? accountLabel(account, st) : null;
 
   return (
     <div className="screen">
@@ -219,13 +234,17 @@ export function StudentPage({ id }: { id: string }) {
               {[st.subject, st.grade].filter(Boolean).join(' · ')}
             </div>
             <div className="sc-slots" style={{ marginTop: 8 }}>
-              {st.status !== 'active' && <span className="badge warn">{st.status === 'paused' ? 'На паузі' : 'В архіві'}</span>}
+              {st.status !== 'active' && (
+                <span className={st.status === 'trial' ? 'badge accent' : 'badge warn'}>
+                  {st.status === 'trial' ? 'Пробний' : st.status === 'paused' ? 'На паузі' : 'В архіві'}
+                </span>
+              )}
               {st.schedule.map((sl) => (
                 <span key={sl.id} className="badge accent">
                   {weekdayShort(sl.weekday)} {sl.time}
                 </span>
               ))}
-              <span className="badge">{money(st.price, st.currency)} / урок</span>
+              <span className="badge">{money(st.price)} / урок</span>
               {tz && (
                 <span className="badge">
                   {zoneLabel(tz)} · зараз {timeInZone(now, tz)}
@@ -257,12 +276,12 @@ export function StudentPage({ id }: { id: string }) {
           {c.parent && <span className="faint sp-parent">Батьки: {c.parent}</span>}
         </div>
 
-        <div className="tiles four">
+        {(st.status !== 'trial' || total.done > 0) && <div className="tiles four">
           <Tile label="Уроків проведено" value={total.done} sub={`з ${fmt(st.startDate, 'd MMMM yyyy')}`} />
           <Tile
             label="Дохід за весь час"
             value={<Money value={total.earned} />}
-            sub={total.done ? `≈ ${money(total.avgPrice, settings.baseCurrency)} за урок` : '—'}
+            sub={total.done ? `≈ ${money(total.avgPrice)} за урок` : '—'}
           />
           <Tile
             label={`${cap(fmt(new Date(), 'LLLL'))}`}
@@ -277,20 +296,15 @@ export function StudentPage({ id }: { id: string }) {
               )
             }
           />
-          <Tile
-            label="Не оплачено"
-            value={<Money value={total.unpaid} />}
-            sub={total.unpaidCount ? nPlural(total.unpaidCount, LESSONS) : 'усе оплачено'}
-            onClick={
-              total.unpaidCount
-                ? () => {
-                    setTab('lessons');
-                    setFilter('unpaid');
-                  }
-                : undefined
-            }
-          />
-        </div>
+          {account && payLabel && (
+            <Tile
+              label={account.debt > 0 ? 'Борг' : 'Оплачено наперед'}
+              value={account.debt > 0 ? money(account.debt) : nPlural(account.lessonsLeft, LESSONS)}
+              sub={<span className={`pay-state ${payLabel.tone}`}>{payLabel.text}</span>}
+              onClick={() => setTab('payments')}
+            />
+          )}
+        </div>}
 
         <div className="sp-tabs">
           <Segmented
@@ -301,6 +315,7 @@ export function StudentPage({ id }: { id: string }) {
               { value: 'overview', label: 'Огляд' },
               { value: 'lessons', label: 'Уроки' },
               { value: 'topics', label: 'Теми' },
+              { value: 'payments', label: 'Оплати' },
               { value: 'notes', label: 'Нотатки' },
             ]}
           />
@@ -308,8 +323,11 @@ export function StudentPage({ id }: { id: string }) {
 
         <div key={tab} className="fade">
           {tab === 'overview' && <Overview st={st} lessons={lessons} now={now} />}
-          {tab === 'lessons' && <LessonHistory st={st} lessons={lessons} now={now} filter={filter} setFilter={setFilter} />}
+          {tab === 'lessons' && account && (
+            <LessonHistory st={st} lessons={lessons} now={now} filter={filter} setFilter={setFilter} account={account} />
+          )}
           {tab === 'topics' && <Topics st={st} lessons={lessons} now={now} />}
+          {tab === 'payments' && account && <Payments st={st} account={account} />}
           {tab === 'notes' && <Notes st={st} />}
         </div>
       </div>
@@ -318,16 +336,19 @@ export function StudentPage({ id }: { id: string }) {
 }
 
 function Overview({ st, lessons, now }: { st: Student; lessons: Lesson[]; now: string }) {
-  const settings = useData((s) => s.settings);
   const open = useUi((s) => s.open);
   const groups = useData((s) => s.groups);
-  const series = monthSeries(lessons, settings, new Date(), 6, now, st.id);
-  const total = summarize(lessons, settings, null, now, st.id);
+  const payments = livePayments(useData((s) => s.payments));
+  const series = monthSeries(lessons, payments, new Date(), 6, now, st.id);
+  const trial = lessons.find((l) => isTrial(l) && l.status !== 'cancelled');
+  const total = summarize(lessons, null, now, st.id);
   const upcoming = lessons.filter((l) => l.status === 'planned' && l.start >= now).slice(0, 4);
   const hasGrades = series.some((p) => p.avgGrade != null);
 
   return (
     <>
+      {trial && <TrialCard lesson={trial} />}
+
       <div className="card">
         <div className="card-title">
           <h3>Найближчі уроки</h3>
@@ -343,8 +364,8 @@ function Overview({ st, lessons, now }: { st: Student; lessons: Lesson[]; now: s
                 <span className="mini-date">{shortDay(l.start)}</span>
                 <span className="mini-time">{timeOf(l.start)}</span>
                 <span className="mini-topic">
-                  {l.groupId ? `${groups[l.groupId]?.name ?? 'Група'} · ` : ''}
-                  {l.topic || <span className="faint">тема не вказана</span>}
+                  {isTrial(l) ? 'Пробний урок' : l.groupId ? `${groups[l.groupId]?.name ?? 'Група'} · ` : ''}
+                  {isTrial(l) ? '' : l.topic || <span className="faint">тема не вказана</span>}
                 </span>
                 {l.moves.length > 0 && <CornerUpRight size={15} className="faint" />}
               </button>
@@ -421,14 +442,15 @@ function LessonHistory({
   now,
   filter,
   setFilter,
+  account,
 }: {
   st: Student;
   lessons: Lesson[];
   now: string;
   filter: LessonFilter;
   setFilter: (f: LessonFilter) => void;
+  account: Account;
 }) {
-  const settings = useData((s) => s.settings);
   const groups = useData((s) => s.groups);
   const open = useUi((s) => s.open);
 
@@ -436,7 +458,7 @@ function LessonHistory({
     .filter((l) => l.start <= now || l.status !== 'planned')
     .filter((l) => {
       const p = l.participants.find((x) => x.studentId === st.id);
-      if (filter === 'unpaid') return !!p && !p.paid && earnedBy(l, p) > 0;
+      if (filter === 'unpaid') return !!p && chargeOf(l, p) > 0 && !account.covered.has(l.id);
       if (filter === 'cancelled') return l.status === 'cancelled';
       if (filter === 'moved') return l.moves.length > 0;
       return true;
@@ -463,19 +485,20 @@ function LessonHistory({
       </div>
       {past.length === 0 && <Empty title="Уроків немає" />}
       {[...months.entries()].map(([k, ls]) => {
-        const sum = summarize(ls, settings, null, now, st.id);
+        const sum = summarize(ls, null, now, st.id);
         return (
           <div key={k} className="month-block">
             <div className="month-head">
               <span>{cap(fmt(parseISO(`${k}-01`), 'LLLL yyyy'))}</span>
               <span className="faint">
-                {nPlural(sum.done, LESSONS)} · {money(sum.earned, settings.baseCurrency)}
+                {nPlural(sum.done, LESSONS)} · {money(sum.earned)}
               </span>
             </div>
             <div className="list">
               {ls.map((l) => {
                 const p = l.participants.find((x) => x.studentId === st.id);
-                const charged = p ? earnedBy(l, p) > 0 : false;
+                const charged = p ? chargeOf(l, p) > 0 : false;
+                const paid = account.covered.has(l.id);
                 return (
                   <button key={l.id} className="list-item" onClick={() => open({ kind: 'lesson', id: l.id })}>
                     <span className="date-chip">
@@ -486,7 +509,9 @@ function LessonHistory({
                       <div className="list-title" style={l.status === 'cancelled' ? { color: 'var(--text-3)' } : undefined}>
                         {l.status === 'cancelled'
                           ? `Скасовано${l.cancel?.reason ? ` · ${l.cancel.reason}` : ''}`
-                          : l.topic || 'Тема не вказана'}
+                          : isTrial(l)
+                            ? 'Пробний урок'
+                            : l.topic || 'Тема не вказана'}
                       </div>
                       <div className="list-sub" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <span>
@@ -502,10 +527,10 @@ function LessonHistory({
                         <GradeMini value={p?.grade} />
                       </div>
                     </div>
-                    {p && (
+                    {p && !isTrial(l) && (
                       <div className="list-end">
-                        <div style={{ fontWeight: 750, color: charged ? undefined : 'var(--text-3)' }}>{money(p.price, p.currency)}</div>
-                        {charged && <span className={p.paid ? 'paid-dot ok' : 'paid-dot'}>{p.paid ? 'оплачено' : 'не оплачено'}</span>}
+                        <div style={{ fontWeight: 750, color: charged ? undefined : 'var(--text-3)' }}>{money(p.price)}</div>
+                        {charged && <span className={paid ? 'paid-dot ok' : 'paid-dot'}>{paid ? 'оплачено' : 'не оплачено'}</span>}
                       </div>
                     )}
                   </button>
@@ -548,6 +573,102 @@ function Topics({ st, lessons, now }: { st: Student; lessons: Lesson[]; now: str
               </li>
             ))}
         </ol>
+      )}
+    </>
+  );
+}
+
+function TrialCard({ lesson }: { lesson: Lesson }) {
+  const open = useUi((s) => s.open);
+  const r = lesson.trial;
+  const outcome = TRIAL_OUTCOMES.find((o) => o.value === r?.outcome)?.label;
+  const empty = !r || (!r.level && !r.strengths && !r.weaknesses && !r.plan);
+  return (
+    <button className="card trial-card" onClick={() => open({ kind: 'lesson', id: lesson.id })}>
+      <div className="card-title">
+        <h3>
+          <Sparkles size={18} /> Пробний урок · {fmt(lesson.start, 'd MMMM')}
+        </h3>
+        {outcome && <span className="badge accent">{outcome}</span>}
+      </div>
+      {empty ? (
+        <div className="faint" style={{ fontSize: 14 }}>
+          {lesson.status === 'planned' ? 'Ще попереду. Після уроку заповніть звіт у картці уроку.' : 'Звіт не заповнено — натисніть, щоб додати.'}
+        </div>
+      ) : (
+        <dl className="trial-dl">
+          {r.level && (
+            <>
+              <dt>Рівень</dt>
+              <dd>{r.level}</dd>
+            </>
+          )}
+          {r.strengths && (
+            <>
+              <dt>Сильні сторони</dt>
+              <dd>{r.strengths}</dd>
+            </>
+          )}
+          {r.weaknesses && (
+            <>
+              <dt>Що підтягнути</dt>
+              <dd>{r.weaknesses}</dd>
+            </>
+          )}
+          {r.plan && (
+            <>
+              <dt>План</dt>
+              <dd>{r.plan}</dd>
+            </>
+          )}
+        </dl>
+      )}
+    </button>
+  );
+}
+
+function Payments({ st, account }: { st: Student; account: Account }) {
+  const all = livePayments(useData((s) => s.payments));
+  const open = useUi((s) => s.open);
+  const list = all.filter((p) => p.studentId === st.id);
+  const label = accountLabel(account, st);
+  return (
+    <>
+      <div className="card pay-summary">
+        <div>
+          <div className="tile-label">{st.billing === 'prepaid' ? 'Платять наперед, пакетами' : 'Платять після кожного уроку'}</div>
+          <div className={`pay-big ${label.tone}`}>{label.text}</div>
+          <div className="faint" style={{ fontSize: 13, marginTop: 4 }}>
+            Усього внесено {money(account.paid)} · уроків на {money(account.charged)}
+          </div>
+        </div>
+        <button className="btn btn-primary" onClick={() => open({ kind: 'payment', studentId: st.id })}>
+          <Wallet size={18} /> Внести оплату
+        </button>
+      </div>
+      {list.length === 0 ? (
+        <Empty title="Оплат ще не було" />
+      ) : (
+        <div className="list" style={{ marginTop: 14 }}>
+          {list.map((p) => (
+            <button key={p.id} className="list-item" onClick={() => open({ kind: 'payment', id: p.id })}>
+              <span className="date-chip">
+                <b>{parseISO(p.date).getDate()}</b>
+                <span>{fmt(p.date, 'LLL').replace('.', '')}</span>
+              </span>
+              <div className="list-main">
+                <div className="list-title">{money(p.amount)}</div>
+                <div className="list-sub">
+                  {p.lessons ? nPlural(p.lessons, LESSONS) : 'довільна сума'}
+                  {p.note && ` · ${p.note}`}
+                </div>
+              </div>
+              <span className="faint" style={{ fontSize: 12.5 }}>
+                {fmt(p.date, 'yyyy')}
+              </span>
+            </button>
+          ))}
+        </div>
       )}
     </>
   );

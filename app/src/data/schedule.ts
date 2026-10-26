@@ -1,7 +1,7 @@
 import { addDays, addWeeks } from 'date-fns';
 import { dayKey, isoWeekday, todayKey } from '../lib/dates';
 import { uid } from '../lib/format';
-import type { Group, Lesson, Participant, Slot, Student } from './types';
+import type { Group, ID, Lesson, Participant, Slot, Student } from './types';
 
 export const studentSlotKey = (studentId: string, slotId: string, day: string) => `s:${studentId}:${slotId}:${day}`;
 export const groupSlotKey = (groupId: string, slotId: string, day: string) => `g:${groupId}:${slotId}:${day}`;
@@ -34,6 +34,20 @@ export function blankLesson(start: string, duration: number, participants: Parti
 }
 
 /**
+ * A lesson made by the weekly schedule. Its id comes from the slot key, so two
+ * devices generating the same week produce the same record instead of duplicates,
+ * and its timestamps are 1 so that any real edit or deletion wins a sync merge.
+ */
+function generated(key: string, start: string, duration: number, participants: Participant[]): Lesson {
+  const l = blankLesson(start, duration, participants);
+  l.id = key;
+  l.slotKey = key;
+  l.createdAt = 1;
+  l.updatedAt = 1;
+  return l;
+}
+
+/**
  * Lessons that weekly slots call for but that don't exist yet. Soft-deleted
  * lessons keep their slotKey, so a lesson removed by hand is not recreated.
  */
@@ -59,11 +73,7 @@ export function missingScheduled(
         if (day < s.startDate || day < today) continue;
         const key = studentSlotKey(s.id, slot.id, day);
         if (taken.has(key)) continue;
-        const l = blankLesson(`${day}T${slot.time}`, slot.duration, [
-          { studentId: s.id, price: s.price, currency: s.currency, paid: false },
-        ]);
-        l.slotKey = key;
-        out.push(l);
+        out.push(generated(key, `${day}T${slot.time}`, slot.duration, [{ studentId: s.id, price: s.price }]));
       }
     }
   }
@@ -74,13 +84,13 @@ export function missingScheduled(
       for (const day of slotDays(slot, from, to)) {
         const key = groupSlotKey(g.id, slot.id, day);
         if (taken.has(key)) continue;
-        const l = blankLesson(
+        const l = generated(
+          key,
           `${day}T${slot.time}`,
           slot.duration,
-          g.studentIds.map((id) => ({ studentId: id, price: g.price, currency: g.currency, paid: false })),
+          g.studentIds.map((id) => ({ studentId: id, price: g.price })),
         );
         l.groupId = g.id;
-        l.slotKey = key;
         out.push(l);
       }
     }
@@ -120,3 +130,21 @@ export const slotKeyOwner = (key: string) => {
   const [kind, owner, slotId] = key.split(':');
   return { kind, owner, slotId };
 };
+
+/**
+ * Untouched future lessons whose slot no longer exists (schedule edited, student
+ * paused) — e.g. generated on another device before it saw the change.
+ */
+export function orphanedScheduled(
+  students: Record<ID, Student>,
+  groups: Record<ID, Group>,
+  lessons: Lesson[],
+  nowStamp: string,
+): Lesson[] {
+  return lessons.filter((l) => {
+    if (!l.slotKey || !isUntouchedFuture(l, nowStamp)) return false;
+    const k = slotKeyOwner(l.slotKey);
+    const owner = k.kind === 'g' ? groups[k.owner] : students[k.owner];
+    return !owner || !!owner.deletedAt || owner.status !== 'active' || !owner.schedule.some((sl) => sl.id === k.slotId);
+  });
+}

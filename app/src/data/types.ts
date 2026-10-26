@@ -1,7 +1,5 @@
 export type ID = string;
 
-export type Currency = 'UAH' | 'EUR' | 'USD' | 'PLN' | 'GBP' | 'CAD';
-
 /** Who initiated a cancellation or a reschedule. */
 export type Initiator = 'student' | 'teacher';
 
@@ -29,7 +27,11 @@ export interface Note {
   text: string;
 }
 
-export type StudentStatus = 'active' | 'paused' | 'archived';
+/** 'trial' — came for a free trial lesson and hasn't started regular lessons yet. */
+export type StudentStatus = 'active' | 'trial' | 'paused' | 'archived';
+
+/** How the family usually pays: a package in advance, or for each lesson after it. */
+export type Billing = 'prepaid' | 'after';
 
 export interface Student {
   id: ID;
@@ -38,8 +40,9 @@ export interface Student {
   color: string;
   subject: string;
   grade: string;
+  /** price of one lesson, UAH */
   price: number;
-  currency: Currency;
+  billing: Billing;
   duration: number;
   /** IANA zone if the student lives in another time zone */
   timezone: string;
@@ -60,9 +63,8 @@ export interface Group {
   color: string;
   studentIds: ID[];
   schedule: Slot[];
-  /** price per student */
+  /** price per student, UAH */
   price: number;
-  currency: Currency;
   duration: number;
   status: StudentStatus;
   createdAt: number;
@@ -72,9 +74,8 @@ export interface Group {
 
 export interface Participant {
   studentId: ID;
+  /** what this lesson costs this student, UAH */
   price: number;
-  currency: Currency;
-  paid: boolean;
   /** 1–5, how well the topic was understood */
   grade?: number;
   /** only meaningful for group lessons */
@@ -100,21 +101,53 @@ export interface Cancel {
 
 export type LessonStatus = 'planned' | 'done' | 'cancelled';
 
+export type LessonKind = 'regular' | 'trial';
+
+export type TrialOutcome = 'continue' | 'thinking' | 'declined';
+
+/** What the teacher found out on a free trial lesson. */
+export interface TrialReport {
+  level: string;
+  strengths: string;
+  weaknesses: string;
+  plan: string;
+  outcome?: TrialOutcome;
+}
+
 export interface Lesson {
   id: ID;
   /** local wall time 'yyyy-MM-ddTHH:mm' */
   start: string;
   duration: number;
+  /** missing means 'regular' */
+  kind?: LessonKind;
   participants: Participant[];
   groupId?: ID;
   status: LessonStatus;
   topic: string;
   homework: string;
   note: string;
+  trial?: TrialReport;
   cancel?: Cancel;
   moves: Move[];
   /** set for lessons generated from a weekly slot, keeps the generator idempotent */
   slotKey?: string;
+  createdAt: number;
+  updatedAt: number;
+  deletedAt?: number;
+}
+
+/** Money the family sent; lessons draw it down in date order. */
+export interface Payment {
+  id: ID;
+  studentId: ID;
+  /** 'yyyy-MM-dd' */
+  date: string;
+  /** UAH */
+  amount: number;
+  /** how many lessons it was meant for, for reference only */
+  lessons?: number;
+  note: string;
   createdAt: number;
   updatedAt: number;
   deletedAt?: number;
@@ -126,11 +159,11 @@ export type CalendarView = 'day' | 'week' | 'month';
 
 export interface Settings {
   theme: ThemeId;
-  baseCurrency: Currency;
-  /** how many UAH one unit of the currency is worth */
-  rates: Record<Currency, number>;
   defaultPrice: number;
   defaultDuration: number;
+  defaultBilling: Billing;
+  /** warn when a prepaid student has this many paid lessons left */
+  lowBalanceLessons: number;
   dayStart: number;
   dayEnd: number;
   horizonWeeks: number;

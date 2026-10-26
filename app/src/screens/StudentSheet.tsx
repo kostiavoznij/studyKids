@@ -3,14 +3,15 @@ import { useState } from 'react';
 import { SUBJECTS, TIMEZONES } from '../data/constants';
 import { useLiveStudents } from '../data/selectors';
 import { useData } from '../data/store';
-import type { Contact, Currency, Slot, StudentStatus } from '../data/types';
+import type { Billing, Contact, Slot, StudentStatus } from '../data/types';
 import { Segmented, Sheet } from '../ui/components';
-import { ColorPicker, DurationChips, PriceField, SlotEditor, StudentChips } from '../ui/fields';
+import { BillingPicker, ColorPicker, DurationChips, PriceField, SlotEditor, StudentChips } from '../ui/fields';
 import { navigate } from '../ui/router';
 import { ask, useUi } from '../ui/uiStore';
 
 const STATUSES: { value: StudentStatus; label: string }[] = [
   { value: 'active', label: 'Займається' },
+  { value: 'trial', label: 'Пробний' },
   { value: 'paused', label: 'Пауза' },
   { value: 'archived', label: 'Архів' },
 ];
@@ -27,7 +28,7 @@ export function StudentSheet({ id, onClose }: { id?: string; onClose: () => void
   const [subject, setSubject] = useState(existing?.subject ?? SUBJECTS[0]);
   const [grade, setGrade] = useState(existing?.grade ?? '');
   const [price, setPrice] = useState(existing?.price ?? settings.defaultPrice);
-  const [currency, setCurrency] = useState<Currency>(existing?.currency ?? settings.baseCurrency);
+  const [billing, setBilling] = useState<Billing>(existing?.billing ?? settings.defaultBilling);
   const [duration, setDuration] = useState(existing?.duration ?? settings.defaultDuration);
   const [schedule, setSchedule] = useState<Slot[]>(existing?.schedule ?? []);
   const [timezone, setTimezone] = useState(existing?.timezone ?? '');
@@ -45,7 +46,7 @@ export function StudentSheet({ id, onClose }: { id?: string; onClose: () => void
       subject: subject.trim(),
       grade: grade.trim(),
       price,
-      currency,
+      billing,
       duration,
       schedule: schedule.map((s) => ({ ...s, duration })),
       timezone,
@@ -110,7 +111,11 @@ export function StudentSheet({ id, onClose }: { id?: string; onClose: () => void
 
       <div className="form-section">
         <h3>Урок і оплата</h3>
-        <PriceField price={price} currency={currency} onPrice={setPrice} onCurrency={setCurrency} />
+        <PriceField price={price} onPrice={setPrice} />
+        <div className="field">
+          <span className="field-label">Як платять</span>
+          <BillingPicker value={billing} onChange={setBilling} />
+        </div>
         <div className="field">
           <span className="field-label">Тривалість</span>
           <DurationChips value={duration} onChange={setDuration} />
@@ -197,7 +202,6 @@ export function GroupSheet({ id, onClose }: { id?: string; onClose: () => void }
   const [color, setColor] = useState(existing?.color ?? 'teal');
   const [ids, setIds] = useState<string[]>(existing?.studentIds ?? []);
   const [price, setPrice] = useState(existing?.price ?? Math.round(settings.defaultPrice * 0.6));
-  const [currency, setCurrency] = useState<Currency>(existing?.currency ?? settings.baseCurrency);
   const [duration, setDuration] = useState(existing?.duration ?? settings.defaultDuration);
   const [schedule, setSchedule] = useState<Slot[]>(existing?.schedule ?? []);
   const [status, setStatus] = useState<StudentStatus>(existing?.status ?? 'active');
@@ -210,7 +214,6 @@ export function GroupSheet({ id, onClose }: { id?: string; onClose: () => void }
       color,
       studentIds: ids,
       price,
-      currency,
       duration,
       schedule: schedule.map((s) => ({ ...s, duration })),
       status,
@@ -251,7 +254,7 @@ export function GroupSheet({ id, onClose }: { id?: string; onClose: () => void }
       </div>
       <div className="form-section">
         <h3>Заняття й оплата</h3>
-        <PriceField label="Ціна з одного учня" price={price} currency={currency} onPrice={setPrice} onCurrency={setCurrency} />
+        <PriceField label="Ціна з одного учня" price={price} onPrice={setPrice} />
         <div className="field">
           <span className="field-label">Тривалість</span>
           <DurationChips value={duration} onChange={setDuration} />

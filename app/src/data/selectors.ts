@@ -1,6 +1,6 @@
 import { colorHex } from './constants';
 import { useData } from './store';
-import type { Group, ID, Lesson, Student } from './types';
+import type { Group, ID, Lesson, Payment, Student } from './types';
 
 // Derived lists are cached per store snapshot: the records are replaced on every
 // change, so a WeakMap keyed by the record object invalidates itself.
@@ -74,7 +74,21 @@ export function liveGroups(rec: Record<ID, Group>): Group[] {
   return out;
 }
 
+const paymentsCache = new WeakMap<object, Payment[]>();
+/** Live payments, newest first. */
+export function livePayments(rec: Record<ID, Payment>): Payment[] {
+  let out = paymentsCache.get(rec);
+  if (!out) {
+    out = Object.values(rec)
+      .filter((p) => !p.deletedAt)
+      .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt);
+    paymentsCache.set(rec, out);
+  }
+  return out;
+}
+
 export const useLiveLessons = () => liveLessons(useData((s) => s.lessons));
+export const useLivePayments = () => livePayments(useData((s) => s.payments));
 export const useLiveStudents = () => liveStudents(useData((s) => s.students));
 export const useLiveGroups = () => liveGroups(useData((s) => s.groups));
 
