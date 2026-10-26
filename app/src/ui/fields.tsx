@@ -100,6 +100,48 @@ export function DurationChips({ value, onChange }: { value: number; onChange: (v
   );
 }
 
+/**
+ * Whole-number input that can be empty while typing. A plain number input bound
+ * to a number turns "" into 0 and then keeps the leading zero ("0500").
+ */
+export function NumberInput({
+  value,
+  onChange,
+  placeholder,
+  label,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+  placeholder?: string;
+  label?: string;
+}) {
+  const [text, setText] = useState(value ? String(value) : '');
+  const [seen, setSeen] = useState(value);
+  // Follow changes made from outside (e.g. picking a package), not our own echo.
+  if (value !== seen) {
+    setSeen(value);
+    if ((Number(text) || 0) !== value) setText(value ? String(value) : '');
+  }
+  return (
+    <input
+      className="input"
+      type="text"
+      inputMode="numeric"
+      autoComplete="off"
+      aria-label={label}
+      placeholder={placeholder ?? '0'}
+      value={text}
+      onChange={(e) => {
+        const digits = e.target.value.replace(/\D/g, '').replace(/^0+(?=\d)/, '');
+        const n = Number(digits) || 0;
+        setText(digits);
+        setSeen(n);
+        onChange(n);
+      }}
+    />
+  );
+}
+
 export function PriceField({
   price,
   onPrice,
@@ -113,14 +155,7 @@ export function PriceField({
     <label className="field">
       <span className="field-label">{label}</span>
       <span className="input-wrap">
-        <input
-          className="input"
-          type="number"
-          inputMode="numeric"
-          min={0}
-          value={Number.isFinite(price) ? price : ''}
-          onChange={(e) => onPrice(e.target.value === '' ? 0 : Number(e.target.value))}
-        />
+        <NumberInput value={price} onChange={onPrice} label={label} />
         <span className="input-suffix">₴</span>
       </span>
     </label>

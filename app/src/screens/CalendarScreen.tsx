@@ -11,6 +11,7 @@ import {
   startOfWeek,
 } from 'date-fns';
 import {
+  CalendarOff,
   CircleAlert,
   CircleCheck,
   CircleDashed,
@@ -18,6 +19,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CornerUpRight,
+  Pencil,
   Plus,
   Sparkles,
   Users,
@@ -26,10 +28,11 @@ import {
 import { useEffect, useRef, useState, type CSSProperties, type MouseEvent, type Ref } from 'react';
 import { accountLabel, needsPayment, useAccounts, type Account } from '../data/billing';
 import { isTrial, lessonValue } from '../data/money';
-import { lessonColor, lessonsByDay, lessonTitle, liveLessons } from '../data/selectors';
+import { DAY_OFF_KINDS, dayOffLabel } from '../data/constants';
+import { dayOffOn, lessonColor, lessonsByDay, lessonTitle, liveLessons, useDaysOff } from '../data/selectors';
 import { summarize } from '../data/stats';
 import { useData } from '../data/store';
-import type { CalendarView, Lesson, Student } from '../data/types';
+import type { CalendarView, DayOff, Lesson, Student } from '../data/types';
 import {
   cap,
   dayKey,
@@ -48,6 +51,7 @@ import { LESSONS, money, nPlural, tiny, TRIALS } from '../lib/format';
 import { Avatar, Money, Segmented, Tile, useNow, useSwipe } from '../ui/components';
 import { navigate } from '../ui/router';
 import { useUi } from '../ui/uiStore';
+import { DAY_OFF_ICONS } from './DayOffSheet';
 import { SyncBadge } from './SyncSection';
 
 const VIEWS: { value: CalendarView; label: string }[] = [
@@ -150,6 +154,8 @@ function WeekStrip({
 }) {
   const students = useData((s) => s.students);
   const groups = useData((s) => s.groups);
+  const workDays = useData((s) => s.settings.workDays);
+  const daysOff = useDaysOff();
   const start = startOfWeek(parseISO(selected), WEEK_OPTS);
   const days = Array.from({ length: 7 }, (_, i) => addDays(start, i));
   const swipe = useSwipe((dir) => onPick(dayKey(addDays(parseISO(selected), dir * 7))));
@@ -159,14 +165,25 @@ function WeekStrip({
       {days.map((d) => {
         const k = dayKey(d);
         const ls = (byDay.get(k) ?? []).filter((l) => l.status !== 'cancelled');
+        const off = dayOffOn(daysOff, k);
+        const rest = !workDays.includes(isoWeekday(d)) && ls.length === 0;
         return (
-          <button key={k} className="ws-day" aria-pressed={k === selected} data-today={k === today ? '' : undefined} onClick={() => onPick(k)}>
+          <button
+            key={k}
+            className="ws-day"
+            aria-pressed={k === selected}
+            data-today={k === today ? '' : undefined}
+            data-rest={rest || (off && ls.length === 0) ? '' : undefined}
+            onClick={() => onPick(k)}
+          >
             <span className="ws-wd">{weekdayShort(isoWeekday(d))}</span>
             <span className="ws-num">{d.getDate()}</span>
             <span className="ws-dots">
-              {ls.slice(0, 5).map((l) => (
-                <i key={l.id} style={{ '--c': lessonColor(l, students, groups) } as CSSProperties} />
-              ))}
+              {off && ls.length === 0 ? (
+                <b className="ws-off" title={dayOffLabel(off.kind)} />
+              ) : (
+                ls.slice(0, 5).map((l) => <i key={l.id} style={{ '--c': lessonColor(l, students, groups) } as CSSProperties} />)
+              )}
             </span>
           </button>
         );
@@ -183,9 +200,14 @@ function DayView({ day, byDay, now }: { day: string; byDay: Map<string, Lesson[]
   const putLesson = useData((s) => s.putLesson);
   const setDay = useUi((s) => s.setDay);
   const notify = useUi((s) => s.notify);
+  const open = useUi((s) => s.open);
+  const workDays = useData((s) => s.settings.workDays);
+  const daysOff = useDaysOff();
   const lessons = byDay.get(day) ?? [];
   const sum = summarize(lessons, null, now);
   const activeCount = sum.done + sum.planned;
+  const off = dayOffOn(daysOff, day);
+  const workday = workDays.includes(isoWeekday(parseISO(day)));
   const today = now.slice(0, 10);
   const swipe = useSwipe((dir) => setDay(dayKey(addDays(parseISO(day), dir))));
 
@@ -221,9 +243,12 @@ function DayView({ day, byDay, now }: { day: string; byDay: Map<string, Lesson[]
       <div className="card day-summary">
         <div className="ds-top">
           <div>
-            <div className="ds-date">{longDay(day)}</div>
+            <div className="ds-date">
+              {longDay(day)}
+              {!workday && ' · вихідний'}
+            </div>
             <div className="ds-main">
-              {activeCount ? nPlural(activeCount, LESSONS) : sum.trials ? '' : 'Вільний день'}
+              {activeCount ? nPlural(activeCount, LESSONS) : sum.trials ? '' : off ? dayOffLabel(off.kind) : workday ? 'Немає уроків' : 'Вихідний'}
               {sum.trials > 0 && <span className="ds-trial">{activeCount ? ' + ' : ''}{nPlural(sum.trials, TRIALS)}</span>}
             </div>
           </div>
@@ -254,6 +279,14 @@ function DayView({ day, byDay, now }: { day: string; byDay: Map<string, Lesson[]
             </div>
           </>
         )}
+        {off ? (
+          <DayOffChip off={off} onEdit={() => open({ kind: 'dayOff', id: off.id })} />
+        ) : (
+          <button className="ds-mark" onClick={() => open({ kind: 'dayOff', day })}>
+            <CalendarOff size={15} />
+            {activeCount === 0 && workday ? 'Чому немає уроків? Позначити день' : 'Позначити день: відпустка, лікарняний…'}
+          </button>
+        )}
         {unmarked.length > 0 && (
           <div className="banner warn">
             <CircleAlert size={20} />
@@ -267,6 +300,32 @@ function DayView({ day, byDay, now }: { day: string; byDay: Map<string, Lesson[]
 
       <Timeline day={day} lessons={lessons} now={now} />
     </div>
+  );
+}
+
+function MonthOff({ kind }: { kind: DayOff['kind'] }) {
+  const Icon = DAY_OFF_ICONS[kind];
+  return (
+    <span className="mg-off" title={dayOffLabel(kind)}>
+      <Icon size={13} />
+      <span className="mg-off-text">{DAY_OFF_KINDS.find((x) => x.value === kind)?.short}</span>
+    </span>
+  );
+}
+
+function DayOffChip({ off, onEdit }: { off: DayOff; onEdit: () => void }) {
+  const Icon = DAY_OFF_ICONS[off.kind];
+  const range = off.from === off.to ? '' : ` · ${fmt(off.from, 'd MMM')} – ${fmt(off.to, 'd MMM')}`;
+  return (
+    <button className="dayoff-chip" onClick={onEdit}>
+      <Icon size={18} />
+      <span>
+        <b>{dayOffLabel(off.kind)}</b>
+        {range}
+        {off.note && <span className="faint"> · {off.note}</span>}
+      </span>
+      <Pencil size={14} className="faint" />
+    </button>
   );
 }
 
@@ -667,6 +726,9 @@ function MonthView({ date, byDay, now }: { date: Date; byDay: Map<string, Lesson
   const rec = useData((s) => s.lessons);
   const updateSettings = useData((s) => s.updateSettings);
   const setDay = useUi((s) => s.setDay);
+  const workDays = useData((s) => s.settings.workDays);
+  const daysOff = useDaysOff();
+  const offOf = (k: string) => dayOffOn(daysOff, k);
   const ms = startOfMonth(date);
   const me = endOfMonth(date);
   const days = eachDayOfInterval({ start: startOfWeek(ms, WEEK_OPTS), end: endOfWeek(me, WEEK_OPTS) });
@@ -691,6 +753,7 @@ function MonthView({ date, byDay, now }: { date: Date; byDay: Map<string, Lesson
               key={k}
               className="mg-day"
               data-out={isSameMonth(d, date) ? undefined : ''}
+              data-rest={(!workDays.includes(isoWeekday(d)) || offOf(k)) && !ls.some((l) => l.status !== 'cancelled') ? '' : undefined}
               data-today={k === today ? '' : undefined}
               onClick={() => {
                 setDay(k);
@@ -699,6 +762,7 @@ function MonthView({ date, byDay, now }: { date: Date; byDay: Map<string, Lesson
               aria-label={`${fmt(d, 'd MMMM')}: ${nPlural(ls.length, LESSONS)}`}
             >
               <span className="mg-num">{d.getDate()}</span>
+              {offOf(k) && !ls.some((l) => l.status !== 'cancelled') && <MonthOff kind={offOf(k)!.kind} />}
               <span className="mg-dots">
                 {ls.slice(0, 9).map((l) => (
                   <i

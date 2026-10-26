@@ -1,11 +1,13 @@
 import { BarChart3, CalendarDays, Settings, Users } from 'lucide-react';
 import { useEffect } from 'react';
-import { lessonsByDay } from './data/selectors';
+import { dayOffLabel } from './data/constants';
+import { dayOffOn, lessonsByDay, useDaysOff } from './data/selectors';
 import { summarize } from './data/stats';
 import { useData } from './data/store';
-import { todayKey } from './lib/dates';
+import { isoWeekday, todayKey } from './lib/dates';
 import { LESSONS, money, nPlural } from './lib/format';
 import { CalendarScreen } from './screens/CalendarScreen';
+import { DayOffSheet } from './screens/DayOffSheet';
 import { NewLessonSheet } from './screens/LessonForm';
 import { PaymentSheet } from './screens/PaymentSheet';
 import { LessonSheet } from './screens/LessonSheet';
@@ -86,21 +88,26 @@ function OverlayHost() {
       return <GroupSheet key={overlay.id ?? 'new'} id={overlay.id} onClose={close} />;
     case 'payment':
       return <PaymentSheet key={overlay.id ?? 'new'} prefill={overlay} onClose={close} />;
+    case 'dayOff':
+      return <DayOffSheet key={overlay.id ?? overlay.day ?? 'new'} id={overlay.id} day={overlay.day} onClose={close} />;
   }
 }
 
 function TodayCard() {
   const rec = useData((s) => s.lessons);
+  const workDays = useData((s) => s.settings.workDays);
+  const off = dayOffOn(useDaysOff(), todayKey());
   const now = useNow();
   const today = todayKey();
   const sum = summarize(lessonsByDay(rec).get(today) ?? [], null, now);
   const count = sum.done + sum.planned + sum.trials;
+  const empty = off ? dayOffLabel(off.kind) : workDays.includes(isoWeekday(new Date())) ? 'Немає уроків' : 'Вихідний';
   return (
     <div className="side-today">
       <div className="faint" style={{ fontSize: 12.5, fontWeight: 700 }}>
         Сьогодні
       </div>
-      <div style={{ fontWeight: 800, fontSize: 17, marginTop: 2 }}>{count ? nPlural(count, LESSONS) : 'Вихідний'}</div>
+      <div style={{ fontWeight: 800, fontSize: 17, marginTop: 2 }}>{count ? nPlural(count, LESSONS) : empty}</div>
       {count > 0 && (
         <div className="muted" style={{ fontSize: 13.5 }}>
           {money(sum.earned + sum.expected)} · проведено {sum.done}

@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { nowStamp, todayKey } from '../lib/dates';
 import { uid } from '../lib/format';
-import { DEFAULT_SETTINGS } from './constants';
+import { DEFAULT_SETTINGS, dayOffLabel } from './constants';
 import { buildDemo } from './demo';
 import { migrateV1 } from './migrate';
 import {
@@ -16,6 +16,7 @@ import {
 } from './schedule';
 import type {
   Cancel,
+  DayOff,
   Group,
   ID,
   Initiator,
@@ -34,6 +35,7 @@ export interface DataState {
   groups: Record<ID, Group>;
   lessons: Record<ID, Lesson>;
   payments: Record<ID, Payment>;
+  daysOff: Record<ID, DayOff>;
   settings: Settings;
   seeded: 'demo' | 'clean' | null;
 }
@@ -41,6 +43,7 @@ export interface DataState {
 export type StudentInput = Partial<Student> & { name: string };
 export type GroupInput = Partial<Group> & { name: string };
 export type PaymentInput = Partial<Payment> & { studentId: ID; amount: number };
+export type DayOffInput = Partial<DayOff> & Pick<DayOff, 'from' | 'to' | 'kind'>;
 
 export interface NewLessonInput {
   start: string;
@@ -74,6 +77,10 @@ interface Actions {
   deleteLesson(id: ID): void;
   savePayment(input: PaymentInput): ID;
   deletePayment(id: ID): void;
+  /** Marks days without lessons; with cancelLessons, planned lessons on those days get cancelled. */
+  saveDayOff(input: DayOffInput): ID;
+  /** Removes the mark and brings back future lessons it had cancelled. */
+  deleteDayOff(id: ID): void;
   updateSettings(patch: Partial<Settings>): void;
   loadDemo(): void;
   clearAll(): void;
@@ -122,6 +129,7 @@ export const useData = create<Store>()(
         groups: {},
         lessons: {},
         payments: {},
+        daysOff: {},
         settings: DEFAULT_SETTINGS,
         seeded: null,
 
@@ -134,7 +142,13 @@ export const useData = create<Store>()(
           const s = get();
           const list = Object.values(s.lessons);
           const orphans = orphanedScheduled(s.students, s.groups, list, nowStamp());
-          const fresh = missingScheduled(Object.values(s.students), Object.values(s.groups), list, s.settings.horizonWeeks);
+          const fresh = missingScheduled(
+            Object.values(s.students),
+            Object.values(s.groups),
+            list,
+            s.settings.horizonWeeks,
+            Object.values(s.daysOff),
+          );
           if (fresh.length === 0 && orphans.length === 0) return;
           const lessons = { ...s.lessons };
           const t = Date.now();
@@ -361,6 +375,43 @@ export const useData = create<Store>()(
           set((s) => ({ payments: { ...s.payments, [id]: stamp({ ...p, deletedAt: Date.now() }) } }));
         },
 
+        saveDayOff(input) {
+          const s = get();
+          const prev = input.id ? s.daysOff[input.id] : undefined;
+          const t = Date.now();
+          const next: DayOff = prev
+            ? stamp({ ...prev, ...input })
+            : { id: uid(), note: '', cancelLessons: true, createdAt: t, updatedAt: t, ...input };
+          let lessons = s.lessons;
+          if (next.cancelLessons) {
+            const reason = dayOffLabel(next.kind);
+            lessons = { ...lessons };
+            for (const l of Object.values(s.lessons)) {
+              const day = l.start.slice(0, 10);
+              if (l.deletedAt || l.status !== 'planned' || day < next.from || day > next.to) continue;
+              lessons[l.id] = stamp({ ...l, status: 'cancelled', cancel: { by: 'teacher', reason, charged: false, at: t } });
+            }
+          }
+          set({ daysOff: { ...s.daysOff, [next.id]: next }, lessons });
+          return next.id;
+        },
+
+        deleteDayOff(id) {
+          const s = get();
+          const d = s.daysOff[id];
+          if (!d) return;
+          const reason = dayOffLabel(d.kind);
+          const now = nowStamp();
+          const lessons = { ...s.lessons };
+          for (const l of Object.values(s.lessons)) {
+            const day = l.start.slice(0, 10);
+            if (l.deletedAt || l.status !== 'cancelled' || day < d.from || day > d.to || l.start < now) continue;
+            if (l.cancel?.by !== 'teacher' || l.cancel.reason !== reason) continue;
+            lessons[l.id] = stamp({ ...l, status: 'planned', cancel: undefined });
+          }
+          set({ daysOff: { ...s.daysOff, [id]: stamp({ ...d, deletedAt: Date.now() }) }, lessons });
+        },
+
         updateSettings(patch) {
           const prevHorizon = get().settings.horizonWeeks;
           set((s) => ({ settings: { ...s.settings, ...patch } }));
@@ -373,13 +424,13 @@ export const useData = create<Store>()(
         },
 
         clearAll() {
-          set({ students: {}, groups: {}, lessons: {}, payments: {}, seeded: 'clean' });
+          set({ students: {}, groups: {}, lessons: {}, payments: {}, daysOff: {}, seeded: 'clean' });
         },
 
         exportData() {
-          const { students, groups, lessons, payments, settings } = get();
+          const { students, groups, lessons, payments, daysOff, settings } = get();
           return JSON.stringify(
-            { app: 'uroky', version: 2, exportedAt: new Date().toISOString(), students, groups, lessons, payments, settings },
+            { app: 'uroky', version: 2, exportedAt: new Date().toISOString(), students, groups, lessons, payments, daysOff, settings },
             null,
             1,
           );
@@ -395,6 +446,7 @@ export const useData = create<Store>()(
               groups: d.groups ?? {},
               lessons: d.lessons,
               payments: d.payments ?? {},
+              daysOff: d.daysOff ?? {},
               settings: { ...DEFAULT_SETTINGS, ...d.settings },
               seeded: 'clean',
             });
@@ -409,7 +461,15 @@ export const useData = create<Store>()(
     {
       name: 'uroky-data',
       version: 2,
-      partialize: ({ students, groups, lessons, payments, settings, seeded }) => ({ students, groups, lessons, payments, settings, seeded }),
+      partialize: ({ students, groups, lessons, payments, daysOff, settings, seeded }) => ({
+        students,
+        groups,
+        lessons,
+        payments,
+        daysOff,
+        settings,
+        seeded,
+      }),
       migrate: (persisted, version) => {
         if (version >= 2) return persisted as DataState;
         // Keep the old copy around in case something goes wrong with the conversion.
@@ -424,7 +484,13 @@ export const useData = create<Store>()(
       },
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<DataState>;
-        return { ...current, ...p, payments: p.payments ?? {}, settings: { ...DEFAULT_SETTINGS, ...p.settings } };
+        return {
+          ...current,
+          ...p,
+          payments: p.payments ?? {},
+          daysOff: p.daysOff ?? {},
+          settings: { ...DEFAULT_SETTINGS, ...p.settings },
+        };
       },
     },
   ),

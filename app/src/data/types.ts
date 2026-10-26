@@ -153,6 +153,23 @@ export interface Payment {
   deletedAt?: number;
 }
 
+export type DayOffKind = 'dayoff' | 'vacation' | 'sick' | 'holiday' | 'break' | 'other';
+
+/** Why there are no lessons on some days: a day off, vacation, sick leave… */
+export interface DayOff {
+  id: ID;
+  /** 'yyyy-MM-dd', inclusive */
+  from: string;
+  to: string;
+  kind: DayOffKind;
+  note: string;
+  /** lessons that fall into these days are cancelled, including ones the schedule adds later */
+  cancelLessons: boolean;
+  createdAt: number;
+  updatedAt: number;
+  deletedAt?: number;
+}
+
 export type ThemeId = 'system' | 'light' | 'dark' | 'black' | 'sand' | 'ocean' | 'mint' | 'rose';
 
 export type CalendarView = 'day' | 'week' | 'month';
@@ -164,6 +181,8 @@ export interface Settings {
   defaultBilling: Billing;
   /** warn when a prepaid student has this many paid lessons left */
   lowBalanceLessons: number;
+  /** ISO weekdays she normally works, 1 = Monday */
+  workDays: number[];
   dayStart: number;
   dayEnd: number;
   horizonWeeks: number;

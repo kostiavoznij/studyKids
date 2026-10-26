@@ -8,14 +8,17 @@
  * Як встановити — docs/SYNC_SETUP.md у репозиторії.
  */
 
-const TYPES = ['students', 'groups', 'lessons', 'payments'];
+const TYPES = ['students', 'groups', 'lessons', 'payments', 'daysOff'];
 
 const SHEETS = {
   students: { title: 'Учні', view: ['Ім\'я', 'Предмет', 'Клас', 'Ціна', 'Статус', 'Оплата'] },
   groups: { title: 'Групи', view: ['Назва', 'Ціна з учня', 'Учасників'] },
   lessons: { title: 'Уроки', view: ['Дата', 'Час', 'Хв', 'Тип', 'Статус', 'Хто', 'Тема', 'Ціна'] },
   payments: { title: 'Оплати', view: ['Дата', 'Учень', 'Сума', 'Уроків', 'Примітка'] },
+  daysOff: { title: 'Дні без уроків', view: ['З', 'По', 'Причина', 'Коментар'] },
 };
+
+const DAY_OFF_UA = { dayoff: 'вихідний', vacation: 'відпустка', sick: 'лікарняний', holiday: 'свято', break: 'канікули', other: 'інше' };
 
 /** id | rev | updatedAt | deleted | …view… | data */
 const LEAD = ['id', 'rev', 'updatedAt', 'deleted'];
@@ -194,6 +197,8 @@ function view(type, d, names) {
     }
     case 'payments':
       return [d.date, name(d.studentId), d.amount, d.lessons || '', d.note || ''];
+    case 'daysOff':
+      return [d.from, d.to, DAY_OFF_UA[d.kind] || d.kind, d.note || ''];
   }
   return [];
 }

@@ -1380,3 +1380,43 @@
     transform: rotate(360deg);
   }
 }
+
+/* ---------- Day off sheet ---------- */
+
+.dayoff-kinds {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.dayoff-kind {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 6px;
+  border-radius: 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-2);
+  transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.12s ease;
+}
+
+.dayoff-kind:active {
+  transform: scale(0.96);
+}
+
+.dayoff-kind[aria-pressed='true'] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.weekday-chip {
+  min-width: 46px;
+  justify-content: center;
+  text-transform: uppercase;
+  font-size: 12.5px;
+}

@@ -3,7 +3,7 @@ import { useRef, type CSSProperties } from 'react';
 import { THEMES } from '../data/constants';
 import { useData } from '../data/store';
 import type { ThemeId } from '../data/types';
-import { todayKey } from '../lib/dates';
+import { todayKey, WEEKDAYS_SHORT } from '../lib/dates';
 import { LESSONS, nPlural } from '../lib/format';
 import { BillingPicker, DurationChips, PriceField } from '../ui/fields';
 import { ask, useUi } from '../ui/uiStore';
@@ -98,6 +98,30 @@ export function SettingsScreen() {
 
         <section className="section card">
           <h2 className="set-title">Календар</h2>
+          <div className="field" style={{ marginBottom: 14 }}>
+            <span className="field-label">Робочі дні</span>
+            <div className="chips">
+              {WEEKDAYS_SHORT.map((w, i) => {
+                const wd = i + 1;
+                const on = settings.workDays.includes(wd);
+                return (
+                  <button
+                    key={w}
+                    className="chip weekday-chip"
+                    aria-pressed={on}
+                    onClick={() =>
+                      update({ workDays: on ? settings.workDays.filter((x) => x !== wd) : [...settings.workDays, wd].sort() })
+                    }
+                  >
+                    {w}
+                  </button>
+                );
+              })}
+            </div>
+            <span className="field-hint">
+              Решта днів — вихідні. Уроки у вихідний усе одно можна ставити, а для будь-якого дня можна позначити відпустку чи лікарняний.
+            </span>
+          </div>
           <div className="row">
             <label className="field">
               <span className="field-label">День з</span>

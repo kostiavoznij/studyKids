@@ -6,7 +6,8 @@ export type Overlay =
   | { kind: 'newLesson'; start?: string; studentId?: ID; groupId?: ID; trial?: boolean }
   | { kind: 'student'; id?: ID }
   | { kind: 'group'; id?: ID }
-  | { kind: 'payment'; id?: ID; studentId?: ID; lessons?: number };
+  | { kind: 'payment'; id?: ID; studentId?: ID; lessons?: number }
+  | { kind: 'dayOff'; id?: ID; day?: string };
 
 interface Toast {
   id: number;

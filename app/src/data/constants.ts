@@ -1,4 +1,4 @@
-import type { Settings, ThemeId, TrialOutcome } from './types';
+import type { DayOffKind, Settings, ThemeId, TrialOutcome } from './types';
 
 export const STUDENT_COLORS: { key: string; hex: string }[] = [
   { key: 'violet', hex: '#7c6cf2' },
@@ -69,6 +69,17 @@ export const TRIAL_OUTCOMES: { value: TrialOutcome; label: string }[] = [
   { value: 'declined', label: 'Не продовжили' },
 ];
 
+export const DAY_OFF_KINDS: { value: DayOffKind; label: string; short: string }[] = [
+  { value: 'dayoff', label: 'Вихідний', short: 'вихідний' },
+  { value: 'vacation', label: 'Відпустка', short: 'відпустка' },
+  { value: 'sick', label: 'Лікарняний', short: 'лікарн.' },
+  { value: 'holiday', label: 'Свято', short: 'свято' },
+  { value: 'break', label: 'Канікули', short: 'канікули' },
+  { value: 'other', label: 'Інше', short: 'інше' },
+];
+
+export const dayOffLabel = (kind: DayOffKind) => DAY_OFF_KINDS.find((k) => k.value === kind)?.label ?? 'Інше';
+
 /** Lesson packages offered when recording a payment. */
 export const PACKAGES = [1, 4, 8, 12];
 
@@ -78,6 +89,7 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultDuration: 60,
   defaultBilling: 'prepaid',
   lowBalanceLessons: 1,
+  workDays: [1, 2, 3, 4, 5],
   dayStart: 9,
   dayEnd: 21,
   horizonWeeks: 6,

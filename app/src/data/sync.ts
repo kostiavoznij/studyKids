@@ -11,7 +11,7 @@ import type { ID } from './types';
  * updatedAt, so edits made on two devices settle on the newest one.
  */
 
-const TYPES = ['students', 'groups', 'lessons', 'payments'] as const;
+const TYPES = ['students', 'groups', 'lessons', 'payments', 'daysOff'] as const;
 type RecType = (typeof TYPES)[number];
 type AnyRecord = { id: ID; updatedAt: number };
 type Records = Partial<Record<RecType, AnyRecord[]>>;

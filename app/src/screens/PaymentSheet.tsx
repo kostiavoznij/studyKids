@@ -8,7 +8,7 @@ import type { ID } from '../data/types';
 import { todayKey } from '../lib/dates';
 import { LESSONS, money, nPlural, plural } from '../lib/format';
 import { Sheet } from '../ui/components';
-import { StudentChips } from '../ui/fields';
+import { NumberInput, StudentChips } from '../ui/fields';
 import { ask, useUi } from '../ui/uiStore';
 
 interface Prefill {
@@ -121,14 +121,10 @@ export function PaymentSheet({ prefill, onClose }: { prefill: Prefill; onClose: 
             <label className="field">
               <span className="field-label">Сума</span>
               <span className="input-wrap">
-                <input
-                  className="input"
-                  type="number"
-                  inputMode="numeric"
-                  min={0}
-                  value={amount || ''}
-                  onChange={(e) => {
-                    const v = Number(e.target.value) || 0;
+                <NumberInput
+                  value={amount}
+                  label="Сума"
+                  onChange={(v) => {
                     setAmount(v);
                     setCount(st.price > 0 && v % st.price === 0 && v > 0 ? v / st.price : null);
                   }}

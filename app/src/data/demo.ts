@@ -4,7 +4,7 @@ import { uid } from '../lib/format';
 import { CANCEL_REASONS, MOVE_REASONS } from './constants';
 import { blankLesson, groupSlotKey, studentSlotKey } from './schedule';
 import { chargeOf } from './money';
-import type { Billing, Group, ID, Lesson, Payment, Slot, Student } from './types';
+import type { Billing, DayOff, Group, ID, Lesson, Payment, Slot, Student } from './types';
 
 // Invented students: the demo is published publicly, so no real names here.
 
@@ -469,6 +469,22 @@ export function buildDemo() {
   });
   trial(newbie('Вероніка', 'red', '4 клас'), `${dayKey(addDays(midnight, 1))}T19:00`);
 
+  // A sick day ten days ago: every lesson that day cancelled by the teacher.
+  const daysOff: Record<ID, DayOff> = {};
+  let sick = subDays(midnight, 10);
+  while (isoWeekday(sick) > 5) sick = subDays(sick, 1);
+  const sickDay = dayKey(sick);
+  for (const l of Object.values(lessons)) {
+    if (l.start.slice(0, 10) !== sickDay || l.status === 'cancelled') continue;
+    l.status = 'cancelled';
+    l.topic = '';
+    l.homework = '';
+    for (const p of l.participants) p.grade = undefined;
+    l.cancel = { by: 'teacher', reason: 'Лікарняний', charged: false, at: sick.getTime() };
+  }
+  const off: DayOff = { id: uid(), from: sickDay, to: sickDay, kind: 'sick', note: 'Застуда', cancelLessons: true, createdAt: sick.getTime(), updatedAt: sick.getTime() };
+  daysOff[off.id] = off;
+
   // Payments: prepaying families buy a package when the balance runs out,
   // the others pay right after each lesson.
   for (const spec of SPECS) {
@@ -496,5 +512,5 @@ export function buildDemo() {
     }
   }
 
-  return { students, groups, lessons, payments };
+  return { students, groups, lessons, payments, daysOff };
 }

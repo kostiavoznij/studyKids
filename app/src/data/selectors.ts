@@ -1,6 +1,6 @@
 import { colorHex } from './constants';
 import { useData } from './store';
-import type { Group, ID, Lesson, Payment, Student } from './types';
+import type { DayOff, Group, ID, Lesson, Payment, Student } from './types';
 
 // Derived lists are cached per store snapshot: the records are replaced on every
 // change, so a WeakMap keyed by the record object invalidates itself.
@@ -87,10 +87,26 @@ export function livePayments(rec: Record<ID, Payment>): Payment[] {
   return out;
 }
 
+const daysOffCache = new WeakMap<object, DayOff[]>();
+export function liveDaysOff(rec: Record<ID, DayOff>): DayOff[] {
+  let out = daysOffCache.get(rec);
+  if (!out) {
+    out = Object.values(rec)
+      .filter((d) => !d.deletedAt)
+      .sort((a, b) => a.from.localeCompare(b.from));
+    daysOffCache.set(rec, out);
+  }
+  return out;
+}
+
+/** The day-off mark covering a date, if any. */
+export const dayOffOn = (list: DayOff[], day: string) => list.find((d) => d.from <= day && day <= d.to);
+
 export const useLiveLessons = () => liveLessons(useData((s) => s.lessons));
 export const useLivePayments = () => livePayments(useData((s) => s.payments));
 export const useLiveStudents = () => liveStudents(useData((s) => s.students));
 export const useLiveGroups = () => liveGroups(useData((s) => s.groups));
+export const useDaysOff = () => liveDaysOff(useData((s) => s.daysOff));
 
 export function lessonTitle(l: Lesson, students: Record<ID, Student>, groups: Record<ID, Group>): string {
   if (l.groupId && groups[l.groupId]) return groups[l.groupId].name;

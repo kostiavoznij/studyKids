@@ -1,7 +1,8 @@
 import { addDays, addWeeks } from 'date-fns';
 import { dayKey, isoWeekday, todayKey } from '../lib/dates';
 import { uid } from '../lib/format';
-import type { Group, ID, Lesson, Participant, Slot, Student } from './types';
+import { dayOffLabel } from './constants';
+import type { DayOff, Group, ID, Lesson, Participant, Slot, Student } from './types';
 
 export const studentSlotKey = (studentId: string, slotId: string, day: string) => `s:${studentId}:${slotId}:${day}`;
 export const groupSlotKey = (groupId: string, slotId: string, day: string) => `g:${groupId}:${slotId}:${day}`;
@@ -56,7 +57,20 @@ export function missingScheduled(
   groups: Group[],
   lessons: Lesson[],
   horizonWeeks: number,
+  daysOff: DayOff[] = [],
 ): Lesson[] {
+  // Days marked as vacation/sick leave get their lessons already cancelled.
+  const offRanges = daysOff.filter((d) => !d.deletedAt && d.cancelLessons);
+  const offFor = (day: string) => offRanges.find((d) => d.from <= day && day <= d.to);
+  const cancelIfOff = (l: Lesson) => {
+    const off = offFor(l.start.slice(0, 10));
+    if (off) {
+      l.status = 'cancelled';
+      l.cancel = { by: 'teacher', reason: dayOffLabel(off.kind), charged: false, at: 1 };
+    }
+    return l;
+  };
+
   const taken = new Set<string>();
   for (const l of lessons) if (l.slotKey) taken.add(l.slotKey);
 
@@ -73,7 +87,7 @@ export function missingScheduled(
         if (day < s.startDate || day < today) continue;
         const key = studentSlotKey(s.id, slot.id, day);
         if (taken.has(key)) continue;
-        out.push(generated(key, `${day}T${slot.time}`, slot.duration, [{ studentId: s.id, price: s.price }]));
+        out.push(cancelIfOff(generated(key, `${day}T${slot.time}`, slot.duration, [{ studentId: s.id, price: s.price }])));
       }
     }
   }
@@ -91,7 +105,7 @@ export function missingScheduled(
           g.studentIds.map((id) => ({ studentId: id, price: g.price })),
         );
         l.groupId = g.id;
-        out.push(l);
+        out.push(cancelIfOff(l));
       }
     }
   }
@@ -100,9 +114,11 @@ export function missingScheduled(
 
 /** A future lesson nobody has touched yet — safe to drop when the schedule changes. */
 export function isUntouchedFuture(l: Lesson, nowStamp: string): boolean {
+  // A lesson the schedule generated straight into a day off (cancel.at === 1) counts as untouched too.
+  const autoCancelled = l.status === 'cancelled' && l.cancel?.at === 1;
   return (
     !l.deletedAt &&
-    l.status === 'planned' &&
+    (l.status === 'planned' || autoCancelled) &&
     l.start >= nowStamp &&
     l.moves.length === 0 &&
     !l.topic &&
