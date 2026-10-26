@@ -1,0 +1,173 @@
+/* Every theme is a set of tokens on [data-theme]. Selectors are not tied to :root,
+   so a preview card can carry its own data-theme and render in that theme. */
+
+[data-theme='light'] {
+  color-scheme: light;
+  --bg: #f4f3ef;
+  --surface: #ffffff;
+  --surface-2: #f8f7f4;
+  --surface-3: #eeece7;
+  --border: rgba(24, 22, 32, 0.08);
+  --border-strong: rgba(24, 22, 32, 0.15);
+  --text: #17161b;
+  --text-2: #56545d;
+  --text-3: #8c8a93;
+  --accent: #5b4fe0;
+  --on-accent: #ffffff;
+  --good: #128a47;
+  --warn: #b97800;
+  --bad: #d93a40;
+  --grid: #e9e7e1;
+  --tint: 15%;
+  --shadow-1: 0 1px 2px rgba(20, 18, 30, 0.06), 0 1px 1px rgba(20, 18, 30, 0.03);
+  --shadow-2: 0 12px 32px rgba(20, 18, 30, 0.14), 0 2px 8px rgba(20, 18, 30, 0.06);
+  --overlay: rgba(14, 12, 22, 0.32);
+}
+
+[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #131316;
+  --surface: #1b1b1f;
+  --surface-2: #222227;
+  --surface-3: #2c2c32;
+  --border: rgba(255, 255, 255, 0.07);
+  --border-strong: rgba(255, 255, 255, 0.13);
+  --text: #f2f1f5;
+  --text-2: #b5b3bd;
+  --text-3: #7f7d88;
+  --accent: #8d83ff;
+  --on-accent: #120f2a;
+  --good: #34c77b;
+  --warn: #f2b33d;
+  --bad: #ff6b6f;
+  --grid: #27272c;
+  --tint: 24%;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 16px 40px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.4);
+  --overlay: rgba(0, 0, 0, 0.55);
+}
+
+[data-theme='black'] {
+  color-scheme: dark;
+  --bg: #000000;
+  --surface: #0e0e10;
+  --surface-2: #151518;
+  --surface-3: #1f1f23;
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.14);
+  --text: #f4f4f6;
+  --text-2: #b0afb8;
+  --text-3: #76747f;
+  --accent: #a39bff;
+  --on-accent: #120f2a;
+  --good: #34c77b;
+  --warn: #f2b33d;
+  --bad: #ff6b6f;
+  --grid: #1c1c20;
+  --tint: 26%;
+  --shadow-1: none;
+  --shadow-2: 0 16px 40px rgba(0, 0, 0, 0.8);
+  --overlay: rgba(0, 0, 0, 0.7);
+}
+
+[data-theme='sand'] {
+  color-scheme: light;
+  --bg: #f2ebdf;
+  --surface: #fcf9f3;
+  --surface-2: #f7f1e7;
+  --surface-3: #ece3d4;
+  --border: rgba(60, 42, 20, 0.1);
+  --border-strong: rgba(60, 42, 20, 0.18);
+  --text: #2b241b;
+  --text-2: #6a5d4c;
+  --text-3: #9a8b77;
+  --accent: #bf5a34;
+  --on-accent: #ffffff;
+  --good: #3f8a3a;
+  --warn: #a96f00;
+  --bad: #c4372f;
+  --grid: #e8dece;
+  --tint: 17%;
+  --shadow-1: 0 1px 2px rgba(60, 42, 20, 0.08);
+  --shadow-2: 0 12px 32px rgba(60, 42, 20, 0.16), 0 2px 8px rgba(60, 42, 20, 0.06);
+  --overlay: rgba(40, 28, 12, 0.3);
+}
+
+[data-theme='ocean'] {
+  color-scheme: dark;
+  --bg: #0c1320;
+  --surface: #131c2b;
+  --surface-2: #192435;
+  --surface-3: #213047;
+  --border: rgba(160, 200, 255, 0.08);
+  --border-strong: rgba(160, 200, 255, 0.15);
+  --text: #e9eef7;
+  --text-2: #a8b5c8;
+  --text-3: #6e7e95;
+  --accent: #4fb3ff;
+  --on-accent: #04121f;
+  --good: #3ccf8e;
+  --warn: #f3b847;
+  --bad: #ff7272;
+  --grid: #1c283a;
+  --tint: 24%;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 16px 40px rgba(0, 0, 0, 0.55);
+  --overlay: rgba(2, 8, 18, 0.6);
+}
+
+[data-theme='mint'] {
+  color-scheme: light;
+  --bg: #edf4f0;
+  --surface: #ffffff;
+  --surface-2: #f5faf7;
+  --surface-3: #e1ece6;
+  --border: rgba(18, 52, 36, 0.09);
+  --border-strong: rgba(18, 52, 36, 0.16);
+  --text: #13211a;
+  --text-2: #4b5f55;
+  --text-3: #829389;
+  --accent: #14895c;
+  --on-accent: #ffffff;
+  --good: #14895c;
+  --warn: #a87400;
+  --bad: #cf3d44;
+  --grid: #dfeae4;
+  --tint: 15%;
+  --shadow-1: 0 1px 2px rgba(18, 52, 36, 0.07);
+  --shadow-2: 0 12px 32px rgba(18, 52, 36, 0.14), 0 2px 8px rgba(18, 52, 36, 0.05);
+  --overlay: rgba(8, 26, 18, 0.3);
+}
+
+[data-theme='rose'] {
+  color-scheme: light;
+  --bg: #f8eff1;
+  --surface: #fffbfc;
+  --surface-2: #fbf4f6;
+  --surface-3: #f1e3e7;
+  --border: rgba(70, 20, 36, 0.09);
+  --border-strong: rgba(70, 20, 36, 0.16);
+  --text: #2a1820;
+  --text-2: #6c5059;
+  --text-3: #a08890;
+  --accent: #c8416f;
+  --on-accent: #ffffff;
+  --good: #2d8a4e;
+  --warn: #a96f00;
+  --bad: #c9303a;
+  --grid: #f0e1e5;
+  --tint: 15%;
+  --shadow-1: 0 1px 2px rgba(70, 20, 36, 0.07);
+  --shadow-2: 0 12px 32px rgba(70, 20, 36, 0.14), 0 2px 8px rgba(70, 20, 36, 0.05);
+  --overlay: rgba(40, 10, 20, 0.3);
+}
+
+/* Derived tokens: declared on every themed element so they resolve against its own palette. */
+[data-theme] {
+  --accent-soft: color-mix(in oklab, var(--accent) 14%, var(--surface));
+  --accent-mute: color-mix(in oklab, var(--accent) 42%, var(--surface));
+  --good-soft: color-mix(in oklab, var(--good) 14%, var(--surface));
+  --warn-soft: color-mix(in oklab, var(--warn) 16%, var(--surface));
+  --bad-soft: color-mix(in oklab, var(--bad) 13%, var(--surface));
+  --now: var(--bad);
+}
