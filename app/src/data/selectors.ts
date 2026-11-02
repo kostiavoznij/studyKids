@@ -1,6 +1,8 @@
+import { useMemo } from 'react';
 import { colorHex } from './constants';
 import { useData } from './store';
-import type { DayOff, Group, ID, Lesson, Payment, Student } from './types';
+import { missingTaxes, planOf, receivedByMonth, thisMonth } from './taxes';
+import type { DayOff, Group, ID, Lesson, Payment, Student, TaxPayment } from './types';
 
 // Derived lists are cached per store snapshot: the records are replaced on every
 // change, so a WeakMap keyed by the record object invalidates itself.
@@ -99,6 +101,19 @@ export function liveDaysOff(rec: Record<ID, DayOff>): DayOff[] {
   return out;
 }
 
+const taxesCache = new WeakMap<object, TaxPayment[]>();
+/** Live tax payments, newest first. */
+export function liveTaxes(rec: Record<ID, TaxPayment>): TaxPayment[] {
+  let out = taxesCache.get(rec);
+  if (!out) {
+    out = Object.values(rec)
+      .filter((t) => !t.deletedAt)
+      .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt);
+    taxesCache.set(rec, out);
+  }
+  return out;
+}
+
 /** The day-off mark covering a date, if any. */
 export const dayOffOn = (list: DayOff[], day: string) => list.find((d) => d.from <= day && day <= d.to);
 
@@ -107,6 +122,22 @@ export const useLivePayments = () => livePayments(useData((s) => s.payments));
 export const useLiveStudents = () => liveStudents(useData((s) => s.students));
 export const useLiveGroups = () => liveGroups(useData((s) => s.groups));
 export const useDaysOff = () => liveDaysOff(useData((s) => s.daysOff));
+export const useLiveTaxes = () => liveTaxes(useData((s) => s.taxes));
+
+export function useTaxPlan() {
+  const plans = useData((s) => s.taxPlans);
+  const payments = useLivePayments();
+  return useMemo(() => planOf(plans, payments), [plans, payments]);
+}
+
+/** Tax periods that are over and still have nothing entered. */
+export function useMissingTaxes() {
+  const { plan } = useTaxPlan();
+  const taxes = useLiveTaxes();
+  const payments = useLivePayments();
+  const month = thisMonth();
+  return useMemo(() => missingTaxes(plan, taxes, receivedByMonth(payments), month), [plan, taxes, payments, month]);
+}
 
 export function lessonTitle(l: Lesson, students: Record<ID, Student>, groups: Record<ID, Group>): string {
   if (l.groupId && groups[l.groupId]) return groups[l.groupId].name;

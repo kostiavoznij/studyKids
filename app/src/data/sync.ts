@@ -9,10 +9,16 @@ import type { ID } from './types';
  * from the one the server last confirmed; dirty records are pushed, then every
  * change newer than our last revision is pulled. Both sides keep the later
  * updatedAt, so edits made on two devices settle on the newest one.
+ *
+ * A table set up with an older Code.gs silently skips record types it doesn't
+ * know. The server lists its types in every reply, and records of other types
+ * stay dirty on the device until the script is updated.
  */
 
-const TYPES = ['students', 'groups', 'lessons', 'payments', 'daysOff'] as const;
+const TYPES = ['students', 'groups', 'lessons', 'payments', 'daysOff', 'taxes', 'taxPlans'] as const;
 type RecType = (typeof TYPES)[number];
+/** what every version of Code.gs stores */
+const BASE_TYPES: readonly RecType[] = ['students', 'groups', 'lessons', 'payments', 'daysOff'];
 type AnyRecord = { id: ID; updatedAt: number };
 type Records = Partial<Record<RecType, AnyRecord[]>>;
 
@@ -23,6 +29,8 @@ interface SyncConfig {
   lastRev: number;
   /** `${type}:${id}` → updatedAt the server already has */
   confirmed: Record<string, number>;
+  /** record types the server stores, as it reported last time */
+  types?: string[];
 }
 
 const STORAGE = 'uroky-sync';
@@ -50,9 +58,11 @@ interface SyncState {
   error?: string;
   /** local changes not yet on the server */
   pending: number;
+  /** the table's script is older than the app and can't store some records yet */
+  outdated: boolean;
 }
 
-export const useSync = create<SyncState>(() => ({ status: 'off', configured: false, pending: 0 }));
+export const useSync = create<SyncState>(() => ({ status: 'off', configured: false, pending: 0, outdated: false }));
 
 /* ---------- transport ---------- */
 
@@ -101,9 +111,12 @@ async function call<T>(cfg: { url: string; key: string }, action: string, payloa
 
 /* ---------- merge ---------- */
 
-function dirtyRecords(s: DataState, confirmed: Record<string, number>): Records {
+const serverTypes = (cfg: SyncConfig) => TYPES.filter((t) => (cfg.types ?? BASE_TYPES).includes(t));
+const isOutdated = (cfg: SyncConfig) => serverTypes(cfg).length < TYPES.length;
+
+function dirtyRecords(s: DataState, confirmed: Record<string, number>, types: readonly RecType[] = TYPES): Records {
   const out: Records = {};
-  for (const type of TYPES) {
+  for (const type of types) {
     const list = (Object.values(s[type]) as AnyRecord[]).filter((r) => confirmed[`${type}:${r.id}`] !== r.updatedAt);
     if (list.length) out[type] = list;
   }
@@ -192,21 +205,26 @@ async function syncOnce() {
   }
   useSync.setState({ status: 'syncing', configured: true });
   try {
-    for (const batch of batches(dirtyRecords(useData.getState(), cfg.confirmed))) {
+    const known = serverTypes(cfg);
+    for (const batch of batches(dirtyRecords(useData.getState(), cfg.confirmed, known))) {
       await call(cfg, 'push', { records: batch });
-      for (const type of TYPES) for (const rec of batch[type] ?? []) cfg.confirmed[`${type}:${rec.id}`] = rec.updatedAt;
+      for (const type of known) for (const rec of batch[type] ?? []) cfg.confirmed[`${type}:${rec.id}`] = rec.updatedAt;
       saveConfig(cfg);
     }
-    const res = await call<{ rev: number; records: Records }>(cfg, 'pull', { since: cfg.lastRev });
+    const res = await call<{ rev: number; records: Records; types?: string[] }>(cfg, 'pull', { since: cfg.lastRev });
     applyRemote(res.records, cfg.confirmed);
     cfg.lastRev = res.rev;
+    cfg.types = res.types ?? [...BASE_TYPES];
     saveConfig(cfg);
+    // The script was just updated: send what it couldn't take before.
+    if (serverTypes(cfg).length > known.length) again = true;
     useData.getState().ensureSchedule();
     useSync.setState({
       status: 'idle',
       lastSyncAt: Date.now(),
       error: undefined,
       pending: countOf(dirtyRecords(useData.getState(), cfg.confirmed)),
+      outdated: isOutdated(cfg),
     });
   } catch (e) {
     const offline = e instanceof SyncError && e.code === 'network' && !navigator.onLine;
@@ -216,7 +234,8 @@ async function syncOnce() {
 
 /** Sets up the triggers once; they do nothing until a table is connected. */
 export function startSync() {
-  useSync.setState({ configured: !!loadConfig() });
+  const cfg = loadConfig();
+  useSync.setState({ configured: !!cfg, outdated: !!cfg && isOutdated(cfg) });
 
   let timer: number | undefined;
   useData.subscribe((s, prev) => {
@@ -253,7 +272,8 @@ export function parseConnection(text: string): { url: string; key: string } | nu
 
 export interface RemoteInfo {
   rev: number;
-  counts: Record<RecType, number>;
+  /** an older script doesn't count the newer types */
+  counts: Partial<Record<RecType, number>> & Record<'students' | 'lessons', number>;
 }
 
 export function checkConnection(url: string, key: string) {
@@ -274,7 +294,7 @@ export async function connect(url: string, key: string, mode: 'replace' | 'merge
 
 export function disconnect() {
   localStorage.removeItem(STORAGE);
-  useSync.setState({ configured: false, status: 'off', pending: 0, error: undefined, lastSyncAt: undefined });
+  useSync.setState({ configured: false, status: 'off', pending: 0, outdated: false, error: undefined, lastSyncAt: undefined });
 }
 
 export function connectionCode(): string | null {

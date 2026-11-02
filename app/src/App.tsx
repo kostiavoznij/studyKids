@@ -1,13 +1,14 @@
-import { BarChart3, CalendarDays, Settings, Users } from 'lucide-react';
+import { BarChart3, CalendarDays, Landmark, Settings, Users } from 'lucide-react';
 import { useEffect } from 'react';
 import { dayOffLabel } from './data/constants';
-import { dayOffOn, lessonsByDay, useDaysOff } from './data/selectors';
+import { dayOffOn, lessonsByDay, useDaysOff, useMissingTaxes } from './data/selectors';
 import { summarize } from './data/stats';
 import { useData } from './data/store';
 import { isoWeekday, todayKey } from './lib/dates';
 import { LESSONS, money, nPlural } from './lib/format';
 import { CalendarScreen } from './screens/CalendarScreen';
 import { DayOffSheet } from './screens/DayOffSheet';
+import { FinanceScreen } from './screens/FinanceScreen';
 import { NewLessonSheet } from './screens/LessonForm';
 import { PaymentSheet } from './screens/PaymentSheet';
 import { LessonSheet } from './screens/LessonSheet';
@@ -16,6 +17,8 @@ import { StatsScreen } from './screens/StatsScreen';
 import { GroupSheet, StudentSheet } from './screens/StudentSheet';
 import { StudentPage, StudentsScreen } from './screens/StudentsScreen';
 import { SyncBadge } from './screens/SyncSection';
+import { TaxPlanSheet } from './screens/TaxPlanSheet';
+import { TaxSheet } from './screens/TaxSheet';
 import { ConfirmHost, ToastHost, useNow } from './ui/components';
 import { useRoute } from './ui/router';
 import { useUi } from './ui/uiStore';
@@ -24,17 +27,20 @@ const NAV = [
   { href: '/', label: 'Розклад', icon: CalendarDays, match: (p: string) => p === '/' },
   { href: '/students', label: 'Учні', icon: Users, match: (p: string) => p.startsWith('/students') },
   { href: '/stats', label: 'Статистика', icon: BarChart3, match: (p: string) => p.startsWith('/stats') },
+  { href: '/finance', label: 'Фінанси', icon: Landmark, match: (p: string) => p.startsWith('/finance') },
   { href: '/settings', label: 'Налаштування', icon: Settings, match: (p: string) => p.startsWith('/settings') },
 ];
 
 export function App() {
   const { path, parts } = useRoute();
+  const taxesDue = useMissingTaxes().length > 0;
   useTheme();
 
   let screen;
   if (parts[0] === 'students' && parts[1]) screen = <StudentPage key={parts[1]} id={parts[1]} />;
   else if (parts[0] === 'students') screen = <StudentsScreen />;
   else if (parts[0] === 'stats') screen = <StatsScreen />;
+  else if (parts[0] === 'finance') screen = <FinanceScreen />;
   else if (parts[0] === 'settings') screen = <SettingsScreen />;
   else screen = <CalendarScreen />;
 
@@ -50,6 +56,7 @@ export function App() {
           <a key={n.href} className="side-link" href={`#${n.href}`} aria-current={n.match(path) ? 'page' : undefined}>
             <n.icon size={20} />
             {n.label}
+            {n.href === '/finance' && taxesDue && <i className="nav-dot" aria-label="Не внесено податок" />}
           </a>
         ))}
         <TodayCard />
@@ -62,6 +69,7 @@ export function App() {
           <a key={n.href} className="tab" href={`#${n.href}`} aria-current={n.match(path) ? 'page' : undefined}>
             <n.icon size={23} strokeWidth={2.1} />
             {n.label === 'Налаштування' ? 'Ще' : n.label}
+            {n.href === '/finance' && taxesDue && <i className="nav-dot" aria-label="Не внесено податок" />}
           </a>
         ))}
       </nav>
@@ -90,6 +98,10 @@ function OverlayHost() {
       return <PaymentSheet key={overlay.id ?? 'new'} prefill={overlay} onClose={close} />;
     case 'dayOff':
       return <DayOffSheet key={overlay.id ?? overlay.day ?? 'new'} id={overlay.id} day={overlay.day} onClose={close} />;
+    case 'tax':
+      return <TaxSheet key={overlay.id ?? `${overlay.taxKind}:${overlay.period}`} prefill={overlay} onClose={close} />;
+    case 'taxPlan':
+      return <TaxPlanSheet onClose={close} />;
   }
 }
 

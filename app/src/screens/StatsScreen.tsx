@@ -113,7 +113,7 @@ export function StatsScreen() {
           </div>
           <div className="hero-money">
             <span>
-              надійшло оплат <b>{money(inflow.amount)}</b>
+              надійшло на рахунок <b>{money(inflow.amount)}</b>
             </span>
             <span>
               передоплата зараз <b>{money(prepaid)}</b>
@@ -124,11 +124,22 @@ export function StatsScreen() {
               </span>
             )}
           </div>
+          {Math.abs(inflow.amount - a.earned) >= 1 && (
+            <button className="hero-note" onClick={() => navigate('/finance')}>
+              <span>
+                {inflow.amount > a.earned
+                  ? `Надійшло на ${money(inflow.amount - a.earned)} більше, ніж зароблено за проведені уроки: здебільшого це передоплата за уроки, які ще попереду.`
+                  : `Надійшло на ${money(a.earned - inflow.amount)} менше, ніж зароблено за проведені уроки: частину з них оплатили раніше або ще не оплатили.`}{' '}
+                <b>Детальніше у Фінансах</b>
+              </span>
+              <ChevronRight size={18} />
+            </button>
+          )}
         </div>
 
         <div className="tiles four" style={{ marginTop: 12 }}>
           <Tile label="Проведено уроків" value={a.done} sub={<><Delta pct={deltaPct(a.done + a.planned, b.done)} /> {a.planned > 0 ? `+ ${a.planned} попереду` : ''}</>} />
-          <Tile label="Надійшло оплат" value={<Money value={inflow.amount} />} sub={inflowPrev.amount ? <Delta pct={deltaPct(inflow.amount, inflowPrev.amount)} /> : `${inflow.count} оплат`} />
+          <Tile label="Надійшло на рахунок" value={<Money value={inflow.amount} />} sub={inflowPrev.amount ? <Delta pct={deltaPct(inflow.amount, inflowPrev.amount)} /> : `${inflow.count} оплат`} />
           <Tile label="Пробні уроки" value={a.trials} sub={conv.trials ? `стали учнями: ${conv.converted} з ${conv.trials}` : 'знайомство з новими учнями'} />
           <Tile label="Учнів на уроках" value={a.students} sub={b.students ? `було ${b.students}` : '—'} />
           <Tile label="Скасовано" value={a.cancelled} sub={a.cancelled ? `учнями ${a.cancelledByStudent} · мною ${a.cancelledByTeacher}` : 'без скасувань'} />
@@ -173,7 +184,7 @@ export function StatsScreen() {
         <div className="stats-charts">
           <div className="card">
             <div className="card-title">
-              <h3>{metric === 'earned' ? 'Зароблено' : 'Надійшло оплат'} по місяцях</h3>
+              <h3>{metric === 'earned' ? 'Зароблено' : 'Надійшло на рахунок'} по місяцях</h3>
               <div className="seg seg-sm">
                 <button aria-pressed={metric === 'earned'} onClick={() => setMetric('earned')}>
                   Уроки
@@ -184,7 +195,7 @@ export function StatsScreen() {
               </div>
             </div>
             <ColumnChart
-              label={metric === 'earned' ? 'Зароблено по місяцях' : 'Надійшло оплат по місяцях'}
+              label={metric === 'earned' ? 'Зароблено по місяцях' : 'Надійшло на рахунок по місяцях'}
               data={series.map((p) => ({ key: p.key, label: p.label, title: p.longLabel, value: p[metric], highlight: p.current }))}
               format={(v) => money(v)}
               tickFormat={compact}

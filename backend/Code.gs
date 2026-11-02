@@ -8,7 +8,7 @@
  * Як встановити — docs/SYNC_SETUP.md у репозиторії.
  */
 
-const TYPES = ['students', 'groups', 'lessons', 'payments', 'daysOff'];
+const TYPES = ['students', 'groups', 'lessons', 'payments', 'daysOff', 'taxes', 'taxPlans'];
 
 const SHEETS = {
   students: { title: 'Учні', view: ['Ім\'я', 'Предмет', 'Клас', 'Ціна', 'Статус', 'Оплата'] },
@@ -16,9 +16,13 @@ const SHEETS = {
   lessons: { title: 'Уроки', view: ['Дата', 'Час', 'Хв', 'Тип', 'Статус', 'Хто', 'Тема', 'Ціна'] },
   payments: { title: 'Оплати', view: ['Дата', 'Учень', 'Сума', 'Уроків', 'Примітка'] },
   daysOff: { title: 'Дні без уроків', view: ['З', 'По', 'Причина', 'Коментар'] },
+  taxes: { title: 'Податки', view: ['Сплачено', 'Що', 'За період', 'Сума', 'Примітка'] },
+  taxPlans: { title: 'Як сплачую податки', view: ['Нагадувати з', 'Податок', 'ЄСВ'] },
 };
 
 const DAY_OFF_UA = { dayoff: 'вихідний', vacation: 'відпустка', sick: 'лікарняний', holiday: 'свято', break: 'канікули', other: 'інше' };
+
+const MONTHS_UA = ['січень', 'лютий', 'березень', 'квітень', 'травень', 'червень', 'липень', 'серпень', 'вересень', 'жовтень', 'листопад', 'грудень'];
 
 /** id | rev | updatedAt | deleted | …view… | data */
 const LEAD = ['id', 'rev', 'updatedAt', 'deleted'];
@@ -51,7 +55,7 @@ function doPost(e) {
     const ss = SpreadsheetApp.openById(props.getProperty('SHEET_ID'));
     switch (req.action) {
       case 'ping':
-        return json({ ok: true, rev: getRev(), counts: counts(ss) });
+        return json({ ok: true, rev: getRev(), counts: counts(ss), types: TYPES });
       case 'pull':
         return json(pull(ss, Number(req.since) || 0));
       case 'push':
@@ -77,7 +81,7 @@ function pull(ss, since) {
     const rows = readRows(ss, type);
     records[type] = rows.filter((r) => r.rev > since).map((r) => r.data);
   }
-  return { ok: true, rev: getRev(), records };
+  return { ok: true, rev: getRev(), records, types: TYPES };
 }
 
 /**
@@ -117,7 +121,7 @@ function push(ss, incoming) {
     if (changed) writeRows(sheet, type, rows, names);
   }
   setRev(rev);
-  return { ok: true, rev, accepted };
+  return { ok: true, rev, accepted, types: TYPES };
 }
 
 function counts(ss) {
@@ -199,8 +203,33 @@ function view(type, d, names) {
       return [d.date, name(d.studentId), d.amount, d.lessons || '', d.note || ''];
     case 'daysOff':
       return [d.from, d.to, DAY_OFF_UA[d.kind] || d.kind, d.note || ''];
+    case 'taxes':
+      return [d.date, d.kind === 'esv' ? 'ЄСВ' : 'податок (ЄП + ВЗ)', periodUa(String(d.period || '')), d.amount, d.note || ''];
+    case 'taxPlans': {
+      const rules = d.rules || {};
+      return [periodUa(String(d.start || '')), rulesUa(rules.tax), rulesUa(rules.esv)];
+    }
   }
   return [];
+}
+
+/** '2026-10' → «жовтень 2026», '2026-Q4' → «IV квартал 2026» */
+function periodUa(p) {
+  const q = p.match(/^(\d{4})-Q([1-4])$/);
+  if (q) return ['I', 'II', 'III', 'IV'][q[2] - 1] + ' квартал ' + q[1];
+  const m = p.match(/^(\d{4})-(\d{2})$/);
+  return m ? MONTHS_UA[Number(m[2]) - 1] + ' ' + m[1] : p;
+}
+
+/** first month of a quarter '2027-01' → «I кв. 2027» */
+function quarterUa(month) {
+  return ['I', 'II', 'III', 'IV'][Math.floor((Number(month.slice(5, 7)) - 1) / 3)] + ' кв. ' + month.slice(0, 4);
+}
+
+function rulesUa(list) {
+  return (list || [])
+    .map((r) => (r.every === 'quarter' ? 'щокварталу' : 'щомісяця') + (r.from ? ' з ' + quarterUa(r.from) : ''))
+    .join(', ');
 }
 
 /** Text that starts like a formula would be run by Sheets — keep it literal. */

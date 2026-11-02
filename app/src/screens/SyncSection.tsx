@@ -67,6 +67,15 @@ function Connected() {
           Ще не відправлено змін: {sync.pending}
         </p>
       )}
+      {sync.outdated && (
+        <p className="sync-error">
+          Скрипт у таблиці старої версії і ще не вміє зберігати податки — вони поки лише на цьому пристрої. Оновіть його:{' '}
+          <a href={`${GUIDE}#оновлення-коду-коли-змінюється-codegs`} target="_blank" rel="noreferrer">
+            інструкція
+          </a>
+          . Перепідключати нічого не треба.
+        </p>
+      )}
       <div className="set-buttons" style={{ marginTop: 14 }}>
         <button className="btn btn-ghost" onClick={() => syncNow()} disabled={sync.status === 'syncing'}>
           <RefreshCw size={17} /> Синхронізувати зараз

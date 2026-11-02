@@ -4,7 +4,8 @@ import { uid } from '../lib/format';
 import { CANCEL_REASONS, MOVE_REASONS } from './constants';
 import { blankLesson, groupSlotKey, studentSlotKey } from './schedule';
 import { chargeOf } from './money';
-import type { Billing, DayOff, Group, ID, Lesson, Payment, Slot, Student } from './types';
+import { addMonth, lastMonth, quarterOf, receivedByMonth, thisMonth } from './taxes';
+import type { Billing, DayOff, Group, ID, Lesson, Payment, Slot, Student, TaxKind, TaxPayment } from './types';
 
 // Invented students: the demo is published publicly, so no real names here.
 
@@ -512,5 +513,23 @@ export function buildDemo() {
     }
   }
 
-  return { students, groups, lessons, payments, daysOff };
+  // Taxes: the single tax every month, ЄСВ every quarter. Last month's tax is
+  // left out, so the reminder shows up.
+  const taxes: Record<ID, TaxPayment> = {};
+  const tax = (kind: TaxKind, period: string, amount: number, date: string) => {
+    if (date > today) return;
+    const t = parseISO(date).getTime();
+    const x: TaxPayment = { id: uid(), kind, period, date, amount, note: '', createdAt: t, updatedAt: t };
+    taxes[x.id] = x;
+  };
+  const income = receivedByMonth(Object.values(payments));
+  const lastDone = addMonth(thisMonth(), -1);
+  for (const [m, amount] of income) {
+    if (m >= lastDone) continue;
+    tax('tax', m, Math.round(amount * 0.06), `${addMonth(m, 1)}-05`);
+    const q = quarterOf(m);
+    if (lastMonth(q) === m) tax('esv', q, 5707, `${addMonth(m, 1)}-15`);
+  }
+
+  return { students, groups, lessons, payments, daysOff, taxes };
 }

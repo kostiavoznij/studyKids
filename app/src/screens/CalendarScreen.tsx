@@ -20,6 +20,7 @@ import {
   ChevronLeft,
   ChevronRight,
   CornerUpRight,
+  Landmark,
   Pencil,
   Plus,
   Sparkles,
@@ -30,9 +31,10 @@ import { useEffect, useRef, useState, type CSSProperties, type MouseEvent, type 
 import { accountLabel, needsPayment, useAccounts, type Account } from '../data/billing';
 import { isTrial, lessonValue } from '../data/money';
 import { dayOffLabel } from '../data/constants';
-import { dayOffOn, lessonColor, lessonsByDay, lessonTitle, liveLessons, useDaysOff } from '../data/selectors';
+import { dayOffOn, lessonColor, lessonsByDay, lessonTitle, liveLessons, useDaysOff, useMissingTaxes } from '../data/selectors';
 import { summarize } from '../data/stats';
 import { useData } from '../data/store';
+import { dueText } from '../data/taxes';
 import type { CalendarView, DayOff, Lesson, Student } from '../data/types';
 import {
   cap,
@@ -240,6 +242,7 @@ function DayView({ day, byDay, now }: { day: string; byDay: Map<string, Lesson[]
       )}
 
       {day === today && <PaymentReminders />}
+      {day === today && <TaxReminder />}
 
       <div className="card day-summary">
         <div className="ds-top">
@@ -412,6 +415,25 @@ function PaymentReminders() {
             </div>
           );
         })}
+    </div>
+  );
+}
+
+/** Tax periods that are over and still have nothing entered. */
+function TaxReminder() {
+  const missing = useMissingTaxes();
+  const open = useUi((s) => s.open);
+  if (missing.length === 0) return null;
+  return (
+    <div className="banner warn" style={{ marginBottom: 12 }}>
+      <Landmark size={20} />
+      <button className="tax-remind-text" onClick={() => navigate('/finance')}>
+        Внести податки: <b>{dueText(missing.slice(0, 3))}</b>
+        {missing.length > 3 && ` і ще ${missing.length - 3}`}
+      </button>
+      <button className="btn btn-sm btn-ghost" onClick={() => open({ kind: 'tax', taxKind: missing[0].kind, period: missing[0].period })}>
+        Внести
+      </button>
     </div>
   );
 }

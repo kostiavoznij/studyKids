@@ -27,8 +27,11 @@ import type {
   Settings,
   Student,
   StudentStatus,
+  TaxPayment,
+  TaxPlan,
   TrialReport,
 } from './types';
+import { TAX_PLAN_ID } from './taxes';
 
 export interface DataState {
   students: Record<ID, Student>;
@@ -36,6 +39,9 @@ export interface DataState {
   lessons: Record<ID, Lesson>;
   payments: Record<ID, Payment>;
   daysOff: Record<ID, DayOff>;
+  taxes: Record<ID, TaxPayment>;
+  /** holds a single record, TAX_PLAN_ID */
+  taxPlans: Record<ID, TaxPlan>;
   settings: Settings;
   seeded: 'demo' | 'clean' | null;
 }
@@ -44,6 +50,7 @@ export type StudentInput = Partial<Student> & { name: string };
 export type GroupInput = Partial<Group> & { name: string };
 export type PaymentInput = Partial<Payment> & { studentId: ID; amount: number };
 export type DayOffInput = Partial<DayOff> & Pick<DayOff, 'from' | 'to' | 'kind'>;
+export type TaxInput = Partial<TaxPayment> & Pick<TaxPayment, 'kind' | 'period' | 'date' | 'amount'>;
 
 export interface NewLessonInput {
   start: string;
@@ -81,6 +88,9 @@ interface Actions {
   saveDayOff(input: DayOffInput): ID;
   /** Removes the mark and brings back future lessons it had cancelled. */
   deleteDayOff(id: ID): void;
+  saveTax(input: TaxInput): ID;
+  deleteTax(id: ID): void;
+  saveTaxPlan(plan: Pick<TaxPlan, 'start' | 'rules'>): void;
   updateSettings(patch: Partial<Settings>): void;
   loadDemo(): void;
   clearAll(): void;
@@ -130,6 +140,8 @@ export const useData = create<Store>()(
         lessons: {},
         payments: {},
         daysOff: {},
+        taxes: {},
+        taxPlans: {},
         settings: DEFAULT_SETTINGS,
         seeded: null,
 
@@ -412,6 +424,28 @@ export const useData = create<Store>()(
           set({ daysOff: { ...s.daysOff, [id]: stamp({ ...d, deletedAt: Date.now() }) }, lessons });
         },
 
+        saveTax(input) {
+          const s = get();
+          const prev = input.id ? s.taxes[input.id] : undefined;
+          const t = Date.now();
+          const next: TaxPayment = prev ? stamp({ ...prev, ...input }) : { id: uid(), note: '', createdAt: t, updatedAt: t, ...input };
+          set({ taxes: { ...s.taxes, [next.id]: next } });
+          return next.id;
+        },
+
+        deleteTax(id) {
+          const x = get().taxes[id];
+          if (!x) return;
+          set((s) => ({ taxes: { ...s.taxes, [id]: stamp({ ...x, deletedAt: Date.now() }) } }));
+        },
+
+        saveTaxPlan({ start, rules }) {
+          const prev = get().taxPlans[TAX_PLAN_ID];
+          const t = Date.now();
+          const next: TaxPlan = prev ? stamp({ ...prev, start, rules, deletedAt: undefined }) : { id: TAX_PLAN_ID, start, rules, createdAt: t, updatedAt: t };
+          set((s) => ({ taxPlans: { ...s.taxPlans, [TAX_PLAN_ID]: next } }));
+        },
+
         updateSettings(patch) {
           const prevHorizon = get().settings.horizonWeeks;
           set((s) => ({ settings: { ...s.settings, ...patch } }));
@@ -419,18 +453,18 @@ export const useData = create<Store>()(
         },
 
         loadDemo() {
-          set({ ...buildDemo(), seeded: 'demo' });
+          set({ taxPlans: {}, ...buildDemo(), seeded: 'demo' });
           get().ensureSchedule();
         },
 
         clearAll() {
-          set({ students: {}, groups: {}, lessons: {}, payments: {}, daysOff: {}, seeded: 'clean' });
+          set({ students: {}, groups: {}, lessons: {}, payments: {}, daysOff: {}, taxes: {}, taxPlans: {}, seeded: 'clean' });
         },
 
         exportData() {
-          const { students, groups, lessons, payments, daysOff, settings } = get();
+          const { students, groups, lessons, payments, daysOff, taxes, taxPlans, settings } = get();
           return JSON.stringify(
-            { app: 'uroky', version: 2, exportedAt: new Date().toISOString(), students, groups, lessons, payments, daysOff, settings },
+            { app: 'uroky', version: 2, exportedAt: new Date().toISOString(), students, groups, lessons, payments, daysOff, taxes, taxPlans, settings },
             null,
             1,
           );
@@ -447,6 +481,8 @@ export const useData = create<Store>()(
               lessons: d.lessons,
               payments: d.payments ?? {},
               daysOff: d.daysOff ?? {},
+              taxes: d.taxes ?? {},
+              taxPlans: d.taxPlans ?? {},
               settings: { ...DEFAULT_SETTINGS, ...d.settings },
               seeded: 'clean',
             });
@@ -461,12 +497,14 @@ export const useData = create<Store>()(
     {
       name: 'uroky-data',
       version: 2,
-      partialize: ({ students, groups, lessons, payments, daysOff, settings, seeded }) => ({
+      partialize: ({ students, groups, lessons, payments, daysOff, taxes, taxPlans, settings, seeded }) => ({
         students,
         groups,
         lessons,
         payments,
         daysOff,
+        taxes,
+        taxPlans,
         settings,
         seeded,
       }),
@@ -489,6 +527,8 @@ export const useData = create<Store>()(
           ...p,
           payments: p.payments ?? {},
           daysOff: p.daysOff ?? {},
+          taxes: p.taxes ?? {},
+          taxPlans: p.taxPlans ?? {},
           settings: { ...DEFAULT_SETTINGS, ...p.settings },
         };
       },

@@ -153,6 +153,48 @@ export interface Payment {
   deletedAt?: number;
 }
 
+/** 'tax' — the single tax together with the military levy, 'esv' — the contribution that counts towards her pension record. */
+export type TaxKind = 'tax' | 'esv';
+
+export type TaxEvery = 'month' | 'quarter';
+
+/** A tax she paid from the FOP account. */
+export interface TaxPayment {
+  id: ID;
+  kind: TaxKind;
+  /** what it was paid for: 'yyyy-MM' for a month, 'yyyy-Qn' for a quarter */
+  period: string;
+  /** 'yyyy-MM-dd', when the money left the account */
+  date: string;
+  /** UAH */
+  amount: number;
+  note: string;
+  createdAt: number;
+  updatedAt: number;
+  deletedAt?: number;
+}
+
+export interface TaxRule {
+  /** first month it applies to, always the first month of a quarter; '' — from the very beginning */
+  from: string;
+  every: TaxEvery;
+}
+
+/**
+ * How she pays taxes. Both devices must agree on it, so it is a synced record
+ * (there is only one, TAX_PLAN_ID) rather than a device setting.
+ */
+export interface TaxPlan {
+  id: ID;
+  /** 'yyyy-MM', the first month the app asks about taxes */
+  start: string;
+  /** oldest first; the first rule has from === '' */
+  rules: Record<TaxKind, TaxRule[]>;
+  createdAt: number;
+  updatedAt: number;
+  deletedAt?: number;
+}
+
 export type DayOffKind = 'dayoff' | 'vacation' | 'sick' | 'holiday' | 'break' | 'other';
 
 /** Why there are no lessons on some days: a day off, vacation, sick leave… */

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { ID } from '../data/types';
+import type { ID, TaxKind } from '../data/types';
 
 export type Overlay =
   | { kind: 'lesson'; id: ID }
@@ -7,7 +7,9 @@ export type Overlay =
   | { kind: 'student'; id?: ID }
   | { kind: 'group'; id?: ID }
   | { kind: 'payment'; id?: ID; studentId?: ID; lessons?: number }
-  | { kind: 'dayOff'; id?: ID; day?: string };
+  | { kind: 'dayOff'; id?: ID; day?: string }
+  | { kind: 'tax'; id?: ID; taxKind?: TaxKind; period?: string }
+  | { kind: 'taxPlan' };
 
 interface Toast {
   id: number;

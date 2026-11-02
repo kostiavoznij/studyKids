@@ -87,6 +87,31 @@ export function buildAccount(st: Student, lessons: Lesson[], payments: Payment[]
   return { studentId: st.id, paid, charged, balance, lessonsLeft, debt, unpaidLessons, state, covered, coveredPlanned, lastPayment };
 }
 
+/**
+ * Money held in advance and money owed across all families at the end of a day.
+ * Between two days, payments − charged lessons = Δprepaid − Δowed, which is
+ * exactly why money in the bank differs from money earned by lessons.
+ */
+export function balancesAt(lessons: Lesson[], payments: Payment[], day: string): { prepaid: number; owed: number } {
+  const bal = new Map<ID, number>();
+  const add = (id: ID, v: number) => bal.set(id, (bal.get(id) ?? 0) + v);
+  for (const p of payments) if (!p.deletedAt && p.date <= day) add(p.studentId, p.amount);
+  for (const l of lessons) {
+    if (l.start.slice(0, 10) > day) continue;
+    for (const p of l.participants) {
+      const c = chargeOf(l, p);
+      if (c) add(p.studentId, -c);
+    }
+  }
+  let prepaid = 0;
+  let owed = 0;
+  for (const v of bal.values()) {
+    if (v > 0) prepaid += v;
+    else owed -= v;
+  }
+  return { prepaid, owed };
+}
+
 export type Tone = 'good' | 'warn' | 'bad' | 'neutral';
 
 export function accountLabel(a: Account, st: Student): { text: string; tone: Tone } {
