@@ -15,7 +15,7 @@ import {
   X,
 } from 'lucide-react';
 import { useState, type CSSProperties } from 'react';
-import { accountLabel, useAccounts } from '../data/billing';
+import { potLabel, useAccounts } from '../data/billing';
 import { CANCEL_REASONS, MOVE_REASONS, TRIAL_LEVELS, TRIAL_OUTCOMES, zoneLabel } from '../data/constants';
 import { chargeOf, isTrial, plannedOf } from '../data/money';
 import { lessonColor, lessonsByDay, lessonTitle } from '../data/selectors';
@@ -278,7 +278,7 @@ function PaymentSection({ lesson, isGroup, onOpenStudent }: { lesson: Lesson; is
   const accounts = useAccounts();
 
   const paidNow = (studentId: string, amount: number) => {
-    const id = savePayment({ studentId, amount, lessons: 1, date: todayKey(), note: '' });
+    const id = savePayment({ studentId, groupId: lesson.groupId, amount, lessons: 1, date: todayKey(), note: '' });
     notify(`Оплату внесено: ${money(amount)}`, () => deletePayment(id));
   };
 
@@ -304,7 +304,8 @@ function PaymentSection({ lesson, isGroup, onOpenStudent }: { lesson: Lesson; is
                 : st?.billing === 'after'
                   ? { text: 'оплата після уроку', tone: '' }
                   : { text: 'ще не оплачено', tone: 'warn' };
-          const label = st && a ? accountLabel(a, st) : null;
+          // Only the money set aside for this kind of lesson pays for it.
+          const label = st && a ? potLabel(a, st, lesson.groupId) : null;
           return (
             <div key={p.studentId} className="list-item pay-item">
               {isGroup && st && (
@@ -319,7 +320,8 @@ function PaymentSection({ lesson, isGroup, onOpenStudent }: { lesson: Lesson; is
                 </div>
                 {label && (
                   <div className="list-sub" style={{ whiteSpace: 'normal' }}>
-                    Рахунок: <span className={`pay-state ${label.tone}`}>{label.text}</span>
+                    {lesson.groupId ? 'За групові: ' : 'Рахунок: '}
+                    <span className={`pay-state ${label.tone}`}>{label.text}</span>
                   </div>
                 )}
               </div>
@@ -328,7 +330,7 @@ function PaymentSection({ lesson, isGroup, onOpenStudent }: { lesson: Lesson; is
                   <button className="btn btn-sm btn-primary" onClick={() => paidNow(st.id, p.price)}>
                     Оплатили
                   </button>
-                  <button className="btn btn-sm btn-ghost" onClick={() => open({ kind: 'payment', studentId: st.id })}>
+                  <button className="btn btn-sm btn-ghost" onClick={() => open({ kind: 'payment', studentId: st.id, groupId: lesson.groupId })}>
                     Пакет
                   </button>
                 </div>

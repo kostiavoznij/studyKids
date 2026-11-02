@@ -59,8 +59,10 @@ export function StatsScreen() {
   let prepaid = 0;
   let owed = 0;
   for (const acc of accounts.values()) {
-    if (acc.balance > 0) prepaid += acc.balance;
-    else owed += -acc.balance;
+    for (const x of acc.pots) {
+      if (x.balance > 0) prepaid += x.balance;
+      else owed += -x.balance;
+    }
   }
 
   const series =

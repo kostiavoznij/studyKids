@@ -147,6 +147,8 @@ export interface Payment {
   amount: number;
   /** how many lessons it was meant for, for reference only */
   lessons?: number;
+  /** the group whose lessons it pays for; missing — the student's individual lessons */
+  groupId?: ID;
   /**
    * Money that came before she started keeping records in the app (what was left
    * of an older package). It counts towards the family's balance but is nobody's

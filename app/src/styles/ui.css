@@ -588,6 +588,9 @@
 
 .seg button {
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   height: 34px;
   padding: 0 12px;
   border-radius: 10px;

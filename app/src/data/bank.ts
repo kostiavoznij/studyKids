@@ -1,7 +1,7 @@
 import { differenceInCalendarDays, parseISO } from 'date-fns';
 import { fmt } from '../lib/dates';
 import { money } from '../lib/format';
-import { balancesByStudent } from './billing';
+import { potBalances } from './billing';
 import { addMonth } from './taxes';
 import type { BankMonth, ID, Lesson, Payment, Student } from './types';
 
@@ -57,6 +57,8 @@ export interface Hint {
   paymentId?: ID;
   /** a family whose payment may be missing */
   studentId?: ID;
+  /** …for the lessons of this group */
+  groupId?: ID;
 }
 
 /**
@@ -87,12 +89,13 @@ export function discrepancyHints(month: string, diff: number, payments: Payment[
         score: fits(p.amount) ? 3 : 1,
       });
     }
-    for (const [id, balance] of balancesByStudent(lessons, live, end)) {
+    for (const { studentId, groupId, balance } of potBalances(lessons, live, end)) {
       if (balance > -0.5) continue;
       out.push({
-        title: `${name(id)} · не оплачено ${money(-balance)}`,
+        title: `${name(studentId)}${groupId ? ' · група' : ''} · не оплачено ${money(-balance)}`,
         text: `${fits(-balance)}на кінець місяця — якщо оплата є у виписці, внесіть її`,
-        studentId: id,
+        studentId,
+        groupId,
         score: fits(-balance) ? 3 : 0.5,
       });
     }

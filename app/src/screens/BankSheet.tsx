@@ -114,7 +114,7 @@ export function BankSheet({ month, onClose }: { month: string; onClose: () => vo
                 <button
                   key={h.paymentId ?? h.studentId ?? h.title}
                   className="list-item"
-                  onClick={() => go(h.paymentId ? { kind: 'payment', id: h.paymentId } : { kind: 'payment', studentId: h.studentId, date: payDay })}
+                  onClick={() => go(h.paymentId ? { kind: 'payment', id: h.paymentId } : { kind: 'payment', studentId: h.studentId, groupId: h.groupId, date: payDay })}
                 >
                   <div className="list-main">
                     <div className="list-title">{h.title}</div>
@@ -159,7 +159,10 @@ export function BankSheet({ month, onClose }: { month: string; onClose: () => vo
             <button key={p.id} className="list-item bank-pay" onClick={() => go({ kind: 'payment', id: p.id })}>
               <span className="bank-date">{fmt(p.date, 'd MMM')}</span>
               <div className="list-main">
-                <div className="list-title">{students[p.studentId]?.name ?? '—'}</div>
+                <div className="list-title">
+                  {students[p.studentId]?.name ?? '—'}
+                  {p.groupId && <span className="faint"> · група</span>}
+                </div>
               </div>
               <b>{money(p.amount)}</b>
             </button>

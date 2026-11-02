@@ -629,6 +629,7 @@ function TrialCard({ lesson }: { lesson: Lesson }) {
 
 function Payments({ st, account }: { st: Student; account: Account }) {
   const all = livePayments(useData((s) => s.payments));
+  const groups = useData((s) => s.groups);
   const open = useUi((s) => s.open);
   const list = all.filter((p) => p.studentId === st.id);
   const label = accountLabel(account, st);
@@ -659,6 +660,7 @@ function Payments({ st, account }: { st: Student; account: Account }) {
               <div className="list-main">
                 <div className="list-title">{money(p.amount)}</div>
                 <div className="list-sub">
+                  {p.groupId && `група «${groups[p.groupId]?.name ?? '—'}» · `}
                   {p.opening && 'залишок з минулого періоду · '}
                   {p.lessons ? nPlural(p.lessons, LESSONS) : 'довільна сума'}
                   {p.note && ` · ${p.note}`}
