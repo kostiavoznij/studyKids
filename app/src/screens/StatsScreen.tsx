@@ -1,11 +1,11 @@
 import { ChevronLeft, ChevronRight, CircleAlert, Info, TrendingDown, TrendingUp } from 'lucide-react';
 import { useState } from 'react';
 import { dayOffLabel } from '../data/constants';
-import { lessonsOfStudent, useDaysOff, useLiveLessons, useLivePayments, useLiveStudents } from '../data/selectors';
+import { lessonsOfStudent, useDaysOff, useLiveLessons, useLivePayments, useLiveStudents, useReceived } from '../data/selectors';
 import { useAccounts } from '../data/billing';
 import { daysOffStats, deltaPct, insights, monthSeries, received, summarize, trialConversion, weekdayLoad, type DayOffStat } from '../data/stats';
 import { useData } from '../data/store';
-import { periodLabel, periodRange, shiftPeriod, WEEKDAYS_SHORT, type Period } from '../lib/dates';
+import { periodLabel, periodRange, shiftPeriod, WEEKDAYS_SHORT, type Period, type Range } from '../lib/dates';
 import { compact, DAYS, grade1, LESSONS, money, nPlural } from '../lib/format';
 import { ColumnChart } from '../ui/charts';
 import { Avatar, Delta, Empty, Money, Segmented, Tile, useNow } from '../ui/components';
@@ -41,8 +41,16 @@ export function StatsScreen() {
   const projected = a.earned + a.expected;
   const incomeDelta = deltaPct(projected, b.earned);
   const notes = insights(lessons, students, cur, prev, now);
-  const inflow = received(payments, cur);
-  const inflowPrev = received(payments, prev);
+  // Differences with the bank she accepted belong to whole months, so a week goes without them.
+  const { records, money: banked } = useReceived();
+  const correction = (m: string) => (banked.get(m) ?? 0) - (records.get(m) ?? 0);
+  const inflowOf = (r: Range) => {
+    const x = received(payments, r);
+    if (period !== 'week') for (const m of banked.keys()) if (m >= r.from.slice(0, 7) && m <= r.to.slice(0, 7)) x.amount += correction(m);
+    return x;
+  };
+  const inflow = inflowOf(cur);
+  const inflowPrev = inflowOf(prev);
   const conv = trialConversion(lessons, studentsRec, cur);
   const offNow = daysOffStats(daysOff, lessons, cur, workDays);
   const offBefore = daysOffStats(daysOff, lessons, prev, workDays);
@@ -196,7 +204,7 @@ export function StatsScreen() {
             </div>
             <ColumnChart
               label={metric === 'earned' ? 'Зароблено по місяцях' : 'Надійшло на рахунок по місяцях'}
-              data={series.map((p) => ({ key: p.key, label: p.label, title: p.longLabel, value: p[metric], highlight: p.current }))}
+              data={series.map((p) => ({ key: p.key, label: p.label, title: p.longLabel, value: p[metric] + (metric === 'received' ? correction(p.key) : 0), highlight: p.current }))}
               format={(v) => money(v)}
               tickFormat={compact}
             />

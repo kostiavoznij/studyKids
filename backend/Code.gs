@@ -8,7 +8,15 @@
  * Як встановити — docs/SYNC_SETUP.md у репозиторії.
  */
 
-const TYPES = ['students', 'groups', 'lessons', 'payments', 'daysOff', 'taxes', 'taxPlans'];
+const TYPES = ['students', 'groups', 'lessons', 'payments', 'daysOff', 'taxes', 'taxPlans', 'bankMonths'];
+
+/**
+ * Newer versions of the app may send record types this script doesn't list.
+ * They are stored as they are, on a tab named after the type (no readable
+ * columns, only the JSON), so the app doesn't have to wait for a script update.
+ * A later script that gives such a type its own tab must move those rows over.
+ */
+const EXTRA_TYPE = /^[a-z][A-Za-z0-9]{1,39}$/;
 
 const SHEETS = {
   students: { title: 'Учні', view: ['Ім\'я', 'Предмет', 'Клас', 'Ціна', 'Статус', 'Оплата'] },
@@ -18,6 +26,7 @@ const SHEETS = {
   daysOff: { title: 'Дні без уроків', view: ['З', 'По', 'Причина', 'Коментар'] },
   taxes: { title: 'Податки', view: ['Сплачено', 'Що', 'За період', 'Сума', 'Примітка'] },
   taxPlans: { title: 'Як сплачую податки', view: ['Нагадувати з', 'Податок', 'ЄСВ'] },
+  bankMonths: { title: 'Звірка з банком', view: ['Місяць', 'За випискою', 'Розбіжність прийнято', 'Пояснення'] },
 };
 
 const DAY_OFF_UA = { dayoff: 'вихідний', vacation: 'відпустка', sick: 'лікарняний', holiday: 'свято', break: 'канікули', other: 'інше' };
@@ -55,7 +64,7 @@ function doPost(e) {
     const ss = SpreadsheetApp.openById(props.getProperty('SHEET_ID'));
     switch (req.action) {
       case 'ping':
-        return json({ ok: true, rev: getRev(), counts: counts(ss), types: TYPES });
+        return json({ ok: true, rev: getRev(), counts: counts(ss), types: TYPES, anyType: true });
       case 'pull':
         return json(pull(ss, Number(req.since) || 0));
       case 'push':
@@ -77,11 +86,11 @@ function doPost(e) {
 
 function pull(ss, since) {
   const records = {};
-  for (const type of TYPES) {
+  for (const type of allTypes()) {
     const rows = readRows(ss, type);
     records[type] = rows.filter((r) => r.rev > since).map((r) => r.data);
   }
-  return { ok: true, rev: getRev(), records, types: TYPES };
+  return { ok: true, rev: getRev(), records, types: TYPES, anyType: true };
 }
 
 /**
@@ -93,10 +102,12 @@ function push(ss, incoming) {
   let rev = getRev();
   let accepted = 0;
   const names = studentNames(ss, incoming.students || []);
+  const extra = Object.keys(incoming).filter((t) => TYPES.indexOf(t) < 0 && EXTRA_TYPE.test(t));
 
-  for (const type of TYPES) {
+  for (const type of TYPES.concat(extra)) {
     const list = incoming[type];
     if (!Array.isArray(list) || list.length === 0) continue;
+    if (extra.indexOf(type) >= 0) rememberType(type);
     const sheet = ensureSheet(ss, type);
     const rows = readRows(ss, type);
     const index = {};
@@ -121,19 +132,42 @@ function push(ss, incoming) {
     if (changed) writeRows(sheet, type, rows, names);
   }
   setRev(rev);
-  return { ok: true, rev, accepted, types: TYPES };
+  return { ok: true, rev, accepted, types: TYPES, anyType: true };
 }
 
 function counts(ss) {
   const out = {};
-  for (const type of TYPES) out[type] = readRows(ss, type).length;
+  for (const type of allTypes()) out[type] = readRows(ss, type).length;
   return out;
+}
+
+function allTypes() {
+  return TYPES.concat(extraTypes());
+}
+
+function extraTypes() {
+  try {
+    return JSON.parse(PropertiesService.getScriptProperties().getProperty('EXTRA_TYPES') || '[]');
+  } catch (err) {
+    return [];
+  }
+}
+
+function rememberType(type) {
+  const list = extraTypes();
+  if (list.indexOf(type) >= 0) return;
+  list.push(type);
+  PropertiesService.getScriptProperties().setProperty('EXTRA_TYPES', JSON.stringify(list));
+}
+
+function sheetDef(type) {
+  return SHEETS[type] || { title: type, view: [] };
 }
 
 /* ---------------- sheet helpers ---------------- */
 
 function ensureSheet(ss, type) {
-  const def = SHEETS[type];
+  const def = sheetDef(type);
   let sheet = ss.getSheetByName(def.title);
   if (!sheet) {
     sheet = ss.insertSheet(def.title);
@@ -148,10 +182,11 @@ function ensureSheet(ss, type) {
 }
 
 function readRows(ss, type) {
-  const sheet = ss.getSheetByName(SHEETS[type].title);
+  const def = sheetDef(type);
+  const sheet = ss.getSheetByName(def.title);
   if (!sheet) return [];
   const last = sheet.getLastRow();
-  const width = LEAD.length + SHEETS[type].view.length + 1;
+  const width = LEAD.length + def.view.length + 1;
   if (last < 2) return [];
   return sheet
     .getRange(2, 1, last - 1, width)
@@ -209,6 +244,8 @@ function view(type, d, names) {
       const rules = d.rules || {};
       return [periodUa(String(d.start || '')), rulesUa(rules.tax), rulesUa(rules.esv)];
     }
+    case 'bankMonths':
+      return [periodUa(String(d.month || '')), d.amount, d.acceptedDiff != null ? d.acceptedDiff : '', d.note || ''];
   }
   return [];
 }

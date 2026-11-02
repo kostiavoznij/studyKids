@@ -15,6 +15,7 @@ import {
   slotKeyOwner,
 } from './schedule';
 import type {
+  BankMonth,
   Cancel,
   DayOff,
   Group,
@@ -42,6 +43,8 @@ export interface DataState {
   taxes: Record<ID, TaxPayment>;
   /** holds a single record, TAX_PLAN_ID */
   taxPlans: Record<ID, TaxPlan>;
+  /** keyed by month 'yyyy-MM' */
+  bankMonths: Record<ID, BankMonth>;
   settings: Settings;
   seeded: 'demo' | 'clean' | null;
 }
@@ -51,6 +54,7 @@ export type GroupInput = Partial<Group> & { name: string };
 export type PaymentInput = Partial<Payment> & { studentId: ID; amount: number };
 export type DayOffInput = Partial<DayOff> & Pick<DayOff, 'from' | 'to' | 'kind'>;
 export type TaxInput = Partial<TaxPayment> & Pick<TaxPayment, 'kind' | 'period' | 'date' | 'amount'>;
+export type BankInput = Pick<BankMonth, 'month' | 'amount' | 'note' | 'acceptedDiff'>;
 
 export interface NewLessonInput {
   start: string;
@@ -91,6 +95,8 @@ interface Actions {
   saveTax(input: TaxInput): ID;
   deleteTax(id: ID): void;
   saveTaxPlan(plan: Pick<TaxPlan, 'start' | 'rules'>): void;
+  saveBankMonth(input: BankInput): void;
+  deleteBankMonth(month: string): void;
   updateSettings(patch: Partial<Settings>): void;
   loadDemo(): void;
   clearAll(): void;
@@ -142,6 +148,7 @@ export const useData = create<Store>()(
         daysOff: {},
         taxes: {},
         taxPlans: {},
+        bankMonths: {},
         settings: DEFAULT_SETTINGS,
         seeded: null,
 
@@ -446,6 +453,21 @@ export const useData = create<Store>()(
           set((s) => ({ taxPlans: { ...s.taxPlans, [TAX_PLAN_ID]: next } }));
         },
 
+        saveBankMonth({ month, amount, note, acceptedDiff }) {
+          const prev = get().bankMonths[month];
+          const t = Date.now();
+          const next: BankMonth = prev
+            ? stamp({ ...prev, amount, note, acceptedDiff, deletedAt: undefined })
+            : { id: month, month, amount, note, acceptedDiff, createdAt: t, updatedAt: t };
+          set((s) => ({ bankMonths: { ...s.bankMonths, [month]: next } }));
+        },
+
+        deleteBankMonth(month) {
+          const prev = get().bankMonths[month];
+          if (!prev) return;
+          set((s) => ({ bankMonths: { ...s.bankMonths, [month]: stamp({ ...prev, deletedAt: Date.now() }) } }));
+        },
+
         updateSettings(patch) {
           const prevHorizon = get().settings.horizonWeeks;
           set((s) => ({ settings: { ...s.settings, ...patch } }));
@@ -453,18 +475,18 @@ export const useData = create<Store>()(
         },
 
         loadDemo() {
-          set({ taxPlans: {}, ...buildDemo(), seeded: 'demo' });
+          set({ taxPlans: {}, bankMonths: {}, ...buildDemo(), seeded: 'demo' });
           get().ensureSchedule();
         },
 
         clearAll() {
-          set({ students: {}, groups: {}, lessons: {}, payments: {}, daysOff: {}, taxes: {}, taxPlans: {}, seeded: 'clean' });
+          set({ students: {}, groups: {}, lessons: {}, payments: {}, daysOff: {}, taxes: {}, taxPlans: {}, bankMonths: {}, seeded: 'clean' });
         },
 
         exportData() {
-          const { students, groups, lessons, payments, daysOff, taxes, taxPlans, settings } = get();
+          const { students, groups, lessons, payments, daysOff, taxes, taxPlans, bankMonths, settings } = get();
           return JSON.stringify(
-            { app: 'uroky', version: 2, exportedAt: new Date().toISOString(), students, groups, lessons, payments, daysOff, taxes, taxPlans, settings },
+            { app: 'uroky', version: 2, exportedAt: new Date().toISOString(), students, groups, lessons, payments, daysOff, taxes, taxPlans, bankMonths, settings },
             null,
             1,
           );
@@ -483,6 +505,7 @@ export const useData = create<Store>()(
               daysOff: d.daysOff ?? {},
               taxes: d.taxes ?? {},
               taxPlans: d.taxPlans ?? {},
+              bankMonths: d.bankMonths ?? {},
               settings: { ...DEFAULT_SETTINGS, ...d.settings },
               seeded: 'clean',
             });
@@ -497,7 +520,7 @@ export const useData = create<Store>()(
     {
       name: 'uroky-data',
       version: 2,
-      partialize: ({ students, groups, lessons, payments, daysOff, taxes, taxPlans, settings, seeded }) => ({
+      partialize: ({ students, groups, lessons, payments, daysOff, taxes, taxPlans, bankMonths, settings, seeded }) => ({
         students,
         groups,
         lessons,
@@ -505,6 +528,7 @@ export const useData = create<Store>()(
         daysOff,
         taxes,
         taxPlans,
+        bankMonths,
         settings,
         seeded,
       }),
@@ -529,6 +553,7 @@ export const useData = create<Store>()(
           daysOff: p.daysOff ?? {},
           taxes: p.taxes ?? {},
           taxPlans: p.taxPlans ?? {},
+          bankMonths: p.bankMonths ?? {},
           settings: { ...DEFAULT_SETTINGS, ...p.settings },
         };
       },

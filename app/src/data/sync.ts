@@ -12,10 +12,12 @@ import type { ID } from './types';
  *
  * A table set up with an older Code.gs silently skips record types it doesn't
  * know. The server lists its types in every reply, and records of other types
- * stay dirty on the device until the script is updated.
+ * stay dirty on the device until the script is updated. Since the version that
+ * added bankMonths the script stores any type (anyType), so new kinds of
+ * records no longer need a script update.
  */
 
-const TYPES = ['students', 'groups', 'lessons', 'payments', 'daysOff', 'taxes', 'taxPlans'] as const;
+const TYPES = ['students', 'groups', 'lessons', 'payments', 'daysOff', 'taxes', 'taxPlans', 'bankMonths'] as const;
 type RecType = (typeof TYPES)[number];
 /** what every version of Code.gs stores */
 const BASE_TYPES: readonly RecType[] = ['students', 'groups', 'lessons', 'payments', 'daysOff'];
@@ -31,6 +33,8 @@ interface SyncConfig {
   confirmed: Record<string, number>;
   /** record types the server stores, as it reported last time */
   types?: string[];
+  /** the server stores records of any type */
+  anyType?: boolean;
 }
 
 const STORAGE = 'uroky-sync';
@@ -111,7 +115,7 @@ async function call<T>(cfg: { url: string; key: string }, action: string, payloa
 
 /* ---------- merge ---------- */
 
-const serverTypes = (cfg: SyncConfig) => TYPES.filter((t) => (cfg.types ?? BASE_TYPES).includes(t));
+const serverTypes = (cfg: SyncConfig) => TYPES.filter((t) => cfg.anyType || (cfg.types ?? BASE_TYPES).includes(t));
 const isOutdated = (cfg: SyncConfig) => serverTypes(cfg).length < TYPES.length;
 
 function dirtyRecords(s: DataState, confirmed: Record<string, number>, types: readonly RecType[] = TYPES): Records {
@@ -211,10 +215,11 @@ async function syncOnce() {
       for (const type of known) for (const rec of batch[type] ?? []) cfg.confirmed[`${type}:${rec.id}`] = rec.updatedAt;
       saveConfig(cfg);
     }
-    const res = await call<{ rev: number; records: Records; types?: string[] }>(cfg, 'pull', { since: cfg.lastRev });
+    const res = await call<{ rev: number; records: Records; types?: string[]; anyType?: boolean }>(cfg, 'pull', { since: cfg.lastRev });
     applyRemote(res.records, cfg.confirmed);
     cfg.lastRev = res.rev;
     cfg.types = res.types ?? [...BASE_TYPES];
+    cfg.anyType = !!res.anyType;
     saveConfig(cfg);
     // The script was just updated: send what it couldn't take before.
     if (serverTypes(cfg).length > known.length) again = true;

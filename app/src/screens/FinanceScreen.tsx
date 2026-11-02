@@ -1,7 +1,8 @@
-import { Check, ChevronLeft, ChevronRight, CircleAlert, Clock, CloudOff, Landmark, Plus, Settings2 } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, CircleAlert, Clock, CloudOff, Landmark, MessageSquareText, Plus, ScrollText, Settings2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { bankCheck, type BankCheck } from '../data/bank';
 import { balancesAt } from '../data/billing';
-import { useLiveLessons, useLivePayments, useLiveTaxes, useMissingTaxes, useTaxPlan } from '../data/selectors';
+import { useLiveLessons, useLivePayments, useLiveTaxes, useMissingTaxes, useReceived, useTaxPlan } from '../data/selectors';
 import { summarize } from '../data/stats';
 import { useData } from '../data/store';
 import { useSync } from '../data/sync';
@@ -19,7 +20,6 @@ import {
   periodsIn,
   quarterOf,
   quarterStart,
-  receivedByMonth,
   sinceLabel,
   TAX_KINDS,
   taxesByMonth,
@@ -28,7 +28,7 @@ import {
 } from '../data/taxes';
 import type { TaxKind, TaxPayment, TaxPlan } from '../data/types';
 import { cap, fmt } from '../lib/dates';
-import { money } from '../lib/format';
+import { money, signedMoney as signed } from '../lib/format';
 import { Empty, Segmented, useNow } from '../ui/components';
 import { useUi } from '../ui/uiStore';
 
@@ -71,18 +71,30 @@ export function FinanceScreen() {
   const missing = useMissingTaxes();
   const outdated = useSync((s) => s.configured && s.outdated);
   const saveTaxPlan = useData((s) => s.saveTaxPlan);
+  const bankMonths = useData((s) => s.bankMonths);
   const open = useUi((s) => s.open);
   const now = useNow();
   const today = thisMonth();
   const [view, setView] = useState<View>('month');
   const [anchor, setAnchor] = useState(today);
 
-  const received = useMemo(() => receivedByMonth(payments), [payments]);
+  // Payments plus differences with the bank she accepted; `records` is payments alone.
+  const { records, money: received } = useReceived();
   const byMonth = useMemo(() => taxesByMonth(taxes, received), [taxes, received]);
 
   const [from, to] = rangeOf(view, anchor);
   const months = moneyMonths(from, to, received, byMonth);
   const total = sumMonths(months);
+  const recordedTotal = months.reduce((sum, m) => sum + (records.get(m.month) ?? 0), 0);
+  const correction = total.received - recordedTotal;
+  const checkOf = (month: string) => bankCheck(bankMonths[month], records.get(month) ?? 0);
+  // Months before any money came in are left out; empty months later on stay.
+  const shown = months.filter((m) => m.month <= today);
+  const firstActive = shown.findIndex((m) => m.received || m.tax || m.esv);
+  const rows = firstActive < 0 ? [] : shown.slice(firstActive);
+  const checks = rows.map((m) => checkOf(m.month));
+  const checked = checks.filter((c) => c.state === 'ok' || c.state === 'accepted').length;
+  const unsettled = checks.filter((c) => c.state === 'diff' || c.state === 'changed').length;
   const earned = summarize(lessons, daysOf(from, to), now).earned;
   const before = balancesAt(lessons, payments, `${addMonth(from, -1)}-31`);
   const after = balancesAt(lessons, payments, `${to}-31`);
@@ -124,10 +136,6 @@ export function FinanceScreen() {
   const yearTotal = sumMonths(moneyMonths(`${year}-01`, `${year}-12`, received, byMonth));
   const allTaxes = taxes.reduce((s, t) => s + t.amount, 0);
   const firstTax = taxes.reduce<string | null>((min, t) => (!min || t.period < min ? t.period : min), null);
-  // Months before any money came in are left out; empty months later on stay.
-  const shown = months.filter((m) => m.month <= today);
-  const firstActive = shown.findIndex((m) => m.received || m.tax || m.esv);
-  const rows = firstActive < 0 ? [] : shown.slice(firstActive);
   const maxRow = Math.max(1, ...rows.map((m) => Math.max(m.received, m.tax + m.esv)));
   const canNext = addMonth(from, STEP[view]) <= today;
 
@@ -210,6 +218,17 @@ export function FinanceScreen() {
         <div className="hero-card rise">
           <div className="hero-label">Надійшло на рахунок</div>
           <div className="hero-value">{money(total.received)}</div>
+          {Math.abs(correction) >= 1 && (
+            <div className="hero-sub">
+              оплати {money(recordedTotal)} · коригування за випискою {signed(correction)}
+            </div>
+          )}
+          {view !== 'month' && checks.length > 0 && (
+            <div className="hero-sub">
+              звірено з банком {checked} з {checks.length} міс.
+              {unsettled > 0 && <span className="bad"> · розбіжностей: {unsettled}</span>}
+            </div>
+          )}
           <SplitBar received={total.received} tax={total.tax} esv={total.esv} />
           <div className="fin-lines">
             <FinLine kind="tax" label="Податок (ЄП + ВЗ)" value={-total.tax} hint={hintFor('tax')} />
@@ -217,6 +236,8 @@ export function FinanceScreen() {
             <FinLine kind="net" label="Чистими" value={total.net} />
           </div>
         </div>
+
+        {view === 'month' && from <= today && <BankCard month={from} check={checkOf(from)} recorded={recordedTotal} />}
 
         {Math.abs(total.received - earned) >= 1 && (
           <div className="card fin-recon">
@@ -236,6 +257,12 @@ export function FinanceScreen() {
                 <div>
                   <dt>{owedDelta > 0 ? 'Уроки, які ще не оплатили' : 'Оплатили борги за минулі уроки'}</dt>
                   <dd>{signed(-owedDelta)}</dd>
+                </div>
+              )}
+              {Math.abs(correction) >= 1 && (
+                <div>
+                  <dt>Коригування за випискою банку</dt>
+                  <dd>{signed(correction)}</dd>
                 </div>
               )}
               <div className="fin-recon-sum">
@@ -283,7 +310,8 @@ export function FinanceScreen() {
                     <SplitBar received={m.received} tax={m.tax} esv={m.esv} scale={Math.max(m.received, m.tax + m.esv) / maxRow} />
                     <div className="list-sub">
                       податки {money(m.tax + m.esv)} · чистими {money(m.net)}
-                      {missing.some((d) => monthsOf(d.period).includes(m.month)) && <span className="bad"> · не внесено</span>}
+                      {missing.some((d) => monthsOf(d.period).includes(m.month)) && <span className="bad"> · не внесено податок</span>}
+                      <BankMark check={checkOf(m.month)} />
                     </div>
                   </div>
                 </button>
@@ -378,8 +406,6 @@ function sumMonths(list: { received: number; tax: number; esv: number; net: numb
   });
 }
 
-const signed = (v: number) => `${v > 0 ? '+' : '−'}${money(Math.abs(v))}`;
-
 const pct = (x: number) => (Math.round(x * 1000) / 10).toLocaleString('uk-UA');
 
 function planSummary(plan: TaxPlan, today: string) {
@@ -414,6 +440,52 @@ function FinLine({ kind, label, value, hint }: { kind: 'net' | 'tax' | 'esv'; la
       <b>{kind === 'net' ? money(value) : value ? `−${money(-value)}` : money(0)}</b>
     </div>
   );
+}
+
+/** The month checked against the bank statement, or an invitation to check it. */
+function BankCard({ month, check, recorded }: { month: string; check: BankCheck; recorded: number }) {
+  const open = useUi((s) => s.open);
+  const st = check.statement;
+  const view = {
+    none: { state: '', icon: <ScrollText size={18} />, title: 'Звірте з випискою банку', sub: 'Впишіть суму надходжень з виписки — застосунок порівняє її з оплатами', action: 'Звірити' },
+    ok: { state: 'paid', icon: <Check size={18} />, title: 'Звірено з банком', sub: `у виписці ${money(st?.amount ?? 0)} — як і в застосунку`, action: 'Змінити' },
+    diff: {
+      state: 'missing',
+      icon: <CircleAlert size={18} />,
+      title: `Розбіжність з банком: ${signed(check.diff)}`,
+      sub: `у виписці ${money(st?.amount ?? 0)}, оплат внесено на ${money(recorded)}`,
+      action: 'Розібратися',
+    },
+    accepted: { state: 'accepted', icon: <MessageSquareText size={18} />, title: `Розбіжність ${signed(check.diff)} пояснено`, sub: `«${st?.note}»`, action: 'Змінити' },
+    changed: {
+      state: 'missing',
+      icon: <CircleAlert size={18} />,
+      title: 'Розбіжність з банком змінилася',
+      sub: `пояснювали ${signed(st?.acceptedDiff ?? 0)}, а тепер ${signed(check.diff)} — перевірте`,
+      action: 'Розібратися',
+    },
+  }[check.state];
+  return (
+    <div className="list bank-card">
+      <div className="list-item fin-status" data-state={view.state}>
+        <span className="insight-icon">{view.icon}</span>
+        <div className="list-main">
+          <div className="list-title">{view.title}</div>
+          <div className="list-sub wrap">{view.sub}</div>
+        </div>
+        <button className="btn btn-sm btn-soft" onClick={() => open({ kind: 'bank', month })}>
+          {view.action}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function BankMark({ check }: { check?: BankCheck }) {
+  if (!check || check.state === 'none') return null;
+  if (check.state === 'ok') return <span className="good"> · звірено</span>;
+  if (check.state === 'accepted') return <span> · звірено з поясненням</span>;
+  return <span className="bad"> · розбіжність з банком</span>;
 }
 
 function StatusRow({ s, onAdd, onOpen }: { s: Status; onAdd: () => void; onOpen: (id: string) => void }) {

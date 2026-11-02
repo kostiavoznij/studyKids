@@ -8,6 +8,9 @@ export function money(amount: number): string {
   return `${group(amount)}${NBSP}₴`;
 }
 
+/** «+500 ₴», «−1 200 ₴» */
+export const signedMoney = (amount: number) => `${amount > 0 ? '+' : '−'}${money(Math.abs(amount))}`;
+
 /** Short form for tight spots: «2,4 тис» */
 export function compact(n: number): string {
   const abs = Math.abs(n);

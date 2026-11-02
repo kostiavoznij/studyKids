@@ -195,6 +195,23 @@ export interface TaxPlan {
   deletedAt?: number;
 }
 
+/** What the bank statement says came in during a month, entered by hand to check the records against it. */
+export interface BankMonth {
+  /** the month itself, so two devices never make two records for one month */
+  id: ID;
+  /** 'yyyy-MM' */
+  month: string;
+  /** UAH */
+  amount: number;
+  /** set when she accepted a difference: the difference (statement − records) she explained */
+  acceptedDiff?: number;
+  /** why the statement and the records differ */
+  note: string;
+  createdAt: number;
+  updatedAt: number;
+  deletedAt?: number;
+}
+
 export type DayOffKind = 'dayoff' | 'vacation' | 'sick' | 'holiday' | 'break' | 'other';
 
 /** Why there are no lessons on some days: a day off, vacation, sick leave… */

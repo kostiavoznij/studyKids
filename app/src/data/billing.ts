@@ -93,6 +93,17 @@ export function buildAccount(st: Student, lessons: Lesson[], payments: Payment[]
  * exactly why money in the bank differs from money earned by lessons.
  */
 export function balancesAt(lessons: Lesson[], payments: Payment[], day: string): { prepaid: number; owed: number } {
+  let prepaid = 0;
+  let owed = 0;
+  for (const v of balancesByStudent(lessons, payments, day).values()) {
+    if (v > 0) prepaid += v;
+    else owed -= v;
+  }
+  return { prepaid, owed };
+}
+
+/** Each family's balance at the end of a day: positive — paid ahead, negative — owed. */
+export function balancesByStudent(lessons: Lesson[], payments: Payment[], day: string): Map<ID, number> {
   const bal = new Map<ID, number>();
   const add = (id: ID, v: number) => bal.set(id, (bal.get(id) ?? 0) + v);
   for (const p of payments) if (!p.deletedAt && p.date <= day) add(p.studentId, p.amount);
@@ -103,13 +114,7 @@ export function balancesAt(lessons: Lesson[], payments: Payment[], day: string):
       if (c) add(p.studentId, -c);
     }
   }
-  let prepaid = 0;
-  let owed = 0;
-  for (const v of bal.values()) {
-    if (v > 0) prepaid += v;
-    else owed -= v;
-  }
-  return { prepaid, owed };
+  return bal;
 }
 
 export type Tone = 'good' | 'warn' | 'bad' | 'neutral';

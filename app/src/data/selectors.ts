@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { withCorrections } from './bank';
 import { colorHex } from './constants';
 import { useData } from './store';
 import { missingTaxes, planOf, receivedByMonth, thisMonth } from './taxes';
@@ -130,13 +131,23 @@ export function useTaxPlan() {
   return useMemo(() => planOf(plans, payments), [plans, payments]);
 }
 
+/** Money per month: payments plus the differences with the bank she accepted. */
+export function useReceived() {
+  const payments = useLivePayments();
+  const bankMonths = useData((s) => s.bankMonths);
+  return useMemo(() => {
+    const records = receivedByMonth(payments);
+    return { records, money: withCorrections(records, bankMonths) };
+  }, [payments, bankMonths]);
+}
+
 /** Tax periods that are over and still have nothing entered. */
 export function useMissingTaxes() {
   const { plan } = useTaxPlan();
   const taxes = useLiveTaxes();
-  const payments = useLivePayments();
+  const received = useReceived().money;
   const month = thisMonth();
-  return useMemo(() => missingTaxes(plan, taxes, receivedByMonth(payments), month), [plan, taxes, payments, month]);
+  return useMemo(() => missingTaxes(plan, taxes, received, month), [plan, taxes, received, month]);
 }
 
 export function lessonTitle(l: Lesson, students: Record<ID, Student>, groups: Record<ID, Group>): string {

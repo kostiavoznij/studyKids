@@ -7,6 +7,7 @@ import { useData } from './data/store';
 import { isoWeekday, todayKey } from './lib/dates';
 import { LESSONS, money, nPlural } from './lib/format';
 import { CalendarScreen } from './screens/CalendarScreen';
+import { BankSheet } from './screens/BankSheet';
 import { DayOffSheet } from './screens/DayOffSheet';
 import { FinanceScreen } from './screens/FinanceScreen';
 import { NewLessonSheet } from './screens/LessonForm';
@@ -102,6 +103,8 @@ function OverlayHost() {
       return <TaxSheet key={overlay.id ?? `${overlay.taxKind}:${overlay.period}`} prefill={overlay} onClose={close} />;
     case 'taxPlan':
       return <TaxPlanSheet onClose={close} />;
+    case 'bank':
+      return <BankSheet key={overlay.month} month={overlay.month} onClose={close} />;
   }
 }
 

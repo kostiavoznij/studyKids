@@ -15,6 +15,7 @@ interface Prefill {
   id?: ID;
   studentId?: ID;
   lessons?: number;
+  date?: string;
 }
 
 export function PaymentSheet({ prefill, onClose }: { prefill: Prefill; onClose: () => void }) {
@@ -32,7 +33,7 @@ export function PaymentSheet({ prefill, onClose }: { prefill: Prefill; onClose: 
   const [studentId, setStudentId] = useState<ID>(initialStudent);
   const [count, setCount] = useState<number | null>(initialCount);
   const [amount, setAmount] = useState<number>(existing?.amount ?? (st0 && initialCount ? st0.price * initialCount : 0));
-  const [date, setDate] = useState(existing?.date ?? todayKey());
+  const [date, setDate] = useState(existing?.date ?? prefill.date ?? todayKey());
   const [note, setNote] = useState(existing?.note ?? '');
 
   const st = studentsRec[studentId];
