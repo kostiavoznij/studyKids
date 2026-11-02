@@ -76,7 +76,7 @@ export function planOf(plans: Record<ID, TaxPlan>, payments: Payment[]): { plan:
   const saved = plans[TAX_PLAN_ID];
   if (saved && !saved.deletedAt) return { plan: saved, saved: true };
   let first = thisMonth();
-  for (const p of payments) if (!p.deletedAt && monthOf(p.date) < first) first = monthOf(p.date);
+  for (const p of payments) if (!p.deletedAt && !p.opening && monthOf(p.date) < first) first = monthOf(p.date);
   return { plan: defaultPlan(first), saved: false };
 }
 
@@ -164,7 +164,7 @@ export const plannedRule = (plan: TaxPlan, kind: TaxKind, today = thisMonth()) =
 export function receivedByMonth(payments: Payment[]): Map<string, number> {
   const out = new Map<string, number>();
   for (const p of payments) {
-    if (p.deletedAt) continue;
+    if (p.deletedAt || p.opening) continue;
     const m = monthOf(p.date);
     out.set(m, (out.get(m) ?? 0) + p.amount);
   }

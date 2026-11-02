@@ -1,13 +1,15 @@
 import { Trash2, Wallet } from 'lucide-react';
 import { useState } from 'react';
+import { lastDay } from '../data/bank';
 import { accountLabel, useAccounts } from '../data/billing';
 import { PACKAGES } from '../data/constants';
-import { useLiveStudents } from '../data/selectors';
+import { useLivePayments, useLiveStudents } from '../data/selectors';
 import { useData } from '../data/store';
+import { addMonth, thisMonth } from '../data/taxes';
 import type { ID } from '../data/types';
 import { todayKey } from '../lib/dates';
 import { LESSONS, money, nPlural, plural } from '../lib/format';
-import { Sheet } from '../ui/components';
+import { Sheet, Switch } from '../ui/components';
 import { NumberInput, StudentChips } from '../ui/fields';
 import { ask, useUi } from '../ui/uiStore';
 
@@ -25,6 +27,7 @@ export function PaymentSheet({ prefill, onClose }: { prefill: Prefill; onClose: 
   const deletePayment = useData((s) => s.deletePayment);
   const notify = useUi((s) => s.notify);
   const accounts = useAccounts();
+  const payments = useLivePayments();
   const students = useLiveStudents().filter((s) => s.status === 'active' || s.status === 'trial' || s.id === existing?.studentId);
 
   const initialStudent = existing?.studentId ?? prefill.studentId ?? '';
@@ -35,9 +38,20 @@ export function PaymentSheet({ prefill, onClose }: { prefill: Prefill; onClose: 
   const [amount, setAmount] = useState<number>(existing?.amount ?? (st0 && initialCount ? st0.price * initialCount : 0));
   const [date, setDate] = useState(existing?.date ?? prefill.date ?? todayKey());
   const [note, setNote] = useState(existing?.note ?? '');
+  const [opening, setOpening] = useState(!!existing?.opening);
 
   const st = studentsRec[studentId];
   const account = st ? accounts.get(st.id) : undefined;
+
+  // A balance left from before the records began only matters while moving in:
+  // offered for a family with no payments yet, or a date in an earlier month.
+  const monthStart = `${thisMonth()}-01`;
+  const firstPayment = !payments.some((p) => p.studentId === studentId && p.id !== existing?.id);
+  const offerOpening = !!st && (opening || firstPayment || date < monthStart);
+  const toggleOpening = (on: boolean) => {
+    setOpening(on);
+    if (on && date >= monthStart) setDate(lastDay(addMonth(thisMonth(), -1)));
+  };
 
   const pickStudent = (id: ID) => {
     const next = studentsRec[id];
@@ -67,8 +81,9 @@ export function PaymentSheet({ prefill, onClose }: { prefill: Prefill; onClose: 
       lessons: count ?? undefined,
       date,
       note: note.trim(),
+      opening: opening || undefined,
     });
-    notify(existing ? 'Оплату змінено' : `Оплату внесено: ${money(amount)}`);
+    notify(existing ? 'Оплату змінено' : opening ? `Залишок внесено: ${money(amount)}` : `Оплату внесено: ${money(amount)}`);
     onClose();
   };
 
@@ -108,7 +123,7 @@ export function PaymentSheet({ prefill, onClose }: { prefill: Prefill; onClose: 
       {st && (
         <>
           <div className="field">
-            <span className="field-label">За скільки уроків</span>
+            <span className="field-label">{opening ? 'Скільки оплачених уроків лишалося' : 'За скільки уроків'}</span>
             <div className="count-chips" role="radiogroup" aria-label="Кількість уроків">
               {PACKAGES.map((n) => (
                 <button key={n} role="radio" className="chip" aria-checked={count === n} aria-pressed={count === n} onClick={() => pickCount(n)}>
@@ -142,9 +157,27 @@ export function PaymentSheet({ prefill, onClose }: { prefill: Prefill; onClose: 
             </label>
           </div>
 
+          {offerOpening && (
+            <div className="toggle-row switch-card">
+              <span>
+                <b>Залишок з попереднього періоду</b>
+                <small>
+                  Гроші прийшли до того, як ви почали вести облік у застосунку. Зарахуються в баланс учня, але не в «Надійшло на рахунок»,
+                  податки й звірку з банком.
+                </small>
+              </span>
+              <Switch checked={opening} onChange={toggleOpening} label="Залишок з попереднього періоду" />
+            </div>
+          )}
+
           <label className="field">
             <span className="field-label">Примітка (необов'язково)</span>
-            <input className="input" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Напр.: переказ на картку" />
+            <input
+              className="input"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder={opening ? 'Напр.: пакет оплачено у жовтні' : 'Напр.: переказ на картку'}
+            />
           </label>
 
           {amount > 0 && (

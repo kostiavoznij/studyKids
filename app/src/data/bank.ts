@@ -69,7 +69,8 @@ export function discrepancyHints(month: string, diff: number, payments: Payment[
   const name = (id: ID) => students[id]?.name ?? '—';
   const fits = (v: number) => (same(v, Math.abs(diff)) ? 'сума збігається з різницею · ' : '');
   const out: (Hint & { score: number })[] = [];
-  const live = payments.filter((p) => !p.deletedAt);
+  // A balance left from before the records began never shows on a statement.
+  const live = payments.filter((p) => !p.deletedAt && !p.opening);
   const end = lastDay(month);
 
   if (diff > 0) {

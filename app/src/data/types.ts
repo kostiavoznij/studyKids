@@ -147,6 +147,12 @@ export interface Payment {
   amount: number;
   /** how many lessons it was meant for, for reference only */
   lessons?: number;
+  /**
+   * Money that came before she started keeping records in the app (what was left
+   * of an older package). It counts towards the family's balance but is nobody's
+   * income in the app: that month is before the records begin.
+   */
+  opening?: boolean;
   note: string;
   createdAt: number;
   updatedAt: number;

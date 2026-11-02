@@ -95,12 +95,12 @@ export function summarize(lessons: Lesson[], r: Range | null, now: string, stude
   return out;
 }
 
-/** Money that actually came in during a period. */
+/** Money that actually came in during a period (balances left from before the records began don't count). */
 export function received(payments: Payment[], r: Range | null, studentId?: ID) {
   let amount = 0;
   let count = 0;
   for (const p of payments) {
-    if (p.deletedAt || (r && !inRange(p.date, r)) || (studentId && p.studentId !== studentId)) continue;
+    if (p.deletedAt || p.opening || (r && !inRange(p.date, r)) || (studentId && p.studentId !== studentId)) continue;
     amount += p.amount;
     count++;
   }

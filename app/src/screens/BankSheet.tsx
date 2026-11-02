@@ -31,7 +31,7 @@ export function BankSheet({ month, onClose }: { month: string; onClose: () => vo
   const hasDiff = amount > 0 && Math.abs(diff) >= 0.5;
   const valid = amount > 0 && (!hasDiff || !accept || note.trim().length > 0);
   const hints = hasDiff ? discrepancyHints(month, diff, payments, lessons, students) : [];
-  const inMonth = payments.filter((p) => p.date.slice(0, 7) === month).sort((a, b) => a.date.localeCompare(b.date));
+  const inMonth = payments.filter((p) => !p.opening && p.date.slice(0, 7) === month).sort((a, b) => a.date.localeCompare(b.date));
   const label = periodLabel(month, true);
   const today = todayKey();
   const payDay = lastDay(month) < today ? lastDay(month) : today;

@@ -659,6 +659,7 @@ function Payments({ st, account }: { st: Student; account: Account }) {
               <div className="list-main">
                 <div className="list-title">{money(p.amount)}</div>
                 <div className="list-sub">
+                  {p.opening && 'залишок з минулого періоду · '}
                   {p.lessons ? nPlural(p.lessons, LESSONS) : 'довільна сума'}
                   {p.note && ` · ${p.note}`}
                 </div>
