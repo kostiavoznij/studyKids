@@ -40,8 +40,6 @@ interface AccountState {
   error?: string;
 }
 
-export const useAccount = create<AccountState>(() => ({ status: cloudEnabled ? 'loading' : 'off' }));
-
 const REMEMBERED = 'uroky-account';
 /** Set before leaving for Google, so the app knows to show the account after coming back. */
 const RETURNING = 'uroky-signing-in';
@@ -53,6 +51,18 @@ function remembered(): { email: string; role: Role } | null {
     return null;
   }
 }
+
+/**
+ * A device that has signed in before opens straight away, even offline; the
+ * server is asked in the background and can still take access away.
+ */
+function initialAccount(): AccountState {
+  if (!cloudEnabled) return { status: 'off' };
+  const last = remembered();
+  return last ? { status: 'in', email: last.email, role: last.role } : { status: 'loading' };
+}
+
+export const useAccount = create<AccountState>(initialAccount);
 
 async function checkRole(email: string) {
   const { data, error } = await cloud().rpc('my_role');
@@ -78,12 +88,23 @@ export async function startAccount() {
   const { data, error } = await auth.getSession();
   const email = data.session?.user.email?.toLowerCase();
   if (email) await checkRole(email);
-  else useAccount.setState({ status: 'out', error: error?.message });
+  // An expired session that couldn't be refreshed for lack of internet: keep working on the remembered access.
+  else if (error && remembered()) return watch();
+  else {
+    localStorage.removeItem(REMEMBERED);
+    useAccount.setState({ status: 'out', email: undefined, role: undefined, error: error?.message });
+  }
+  watch();
+}
 
+function watch() {
+  const auth = cloud().auth;
   auth.onAuthStateChange((event, session) => {
     // Calls to the server from inside this callback can deadlock the client, hence the timeout.
-    if (event === 'SIGNED_OUT') useAccount.setState({ status: 'out', email: undefined, role: undefined });
-    else if (event === 'SIGNED_IN' && session?.user.email && session.user.email.toLowerCase() !== useAccount.getState().email)
+    if (event === 'SIGNED_OUT') {
+      localStorage.removeItem(REMEMBERED);
+      useAccount.setState({ status: 'out', email: undefined, role: undefined });
+    } else if (event === 'SIGNED_IN' && session?.user.email && session.user.email.toLowerCase() !== useAccount.getState().email)
       window.setTimeout(() => checkRole(session.user.email!.toLowerCase()), 0);
   });
 }

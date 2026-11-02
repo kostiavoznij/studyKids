@@ -1,5 +1,6 @@
 import { BarChart3, CalendarDays, Landmark, Settings, Users } from 'lucide-react';
 import { useEffect } from 'react';
+import { cloudEnabled, useAccount } from './data/cloud';
 import { dayOffLabel } from './data/constants';
 import { dayOffOn, lessonsByDay, useDaysOff, useMissingTaxes } from './data/selectors';
 import { summarize } from './data/stats';
@@ -13,6 +14,7 @@ import { FinanceScreen } from './screens/FinanceScreen';
 import { NewLessonSheet } from './screens/LessonForm';
 import { PaymentSheet } from './screens/PaymentSheet';
 import { LessonSheet } from './screens/LessonSheet';
+import { LockScreen } from './screens/LockScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { StatsScreen } from './screens/StatsScreen';
 import { GroupSheet, StudentSheet } from './screens/StudentSheet';
@@ -32,10 +34,24 @@ const NAV = [
   { href: '/settings', label: 'Налаштування', icon: Settings, match: (p: string) => p.startsWith('/settings') },
 ];
 
+/** Without access only the sign-in screen is shown, never the app itself. */
 export function App() {
+  const account = useAccount();
+  useTheme();
+  if (cloudEnabled && !(account.status === 'in' && account.role === 'admin')) {
+    return (
+      <>
+        <LockScreen />
+        <ToastHost />
+      </>
+    );
+  }
+  return <Shell />;
+}
+
+function Shell() {
   const { path, parts } = useRoute();
   const taxesDue = useMissingTaxes().length > 0;
-  useTheme();
 
   let screen;
   if (parts[0] === 'students' && parts[1]) screen = <StudentPage key={parts[1]} id={parts[1]} />;

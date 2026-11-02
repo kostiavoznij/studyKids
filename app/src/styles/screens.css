@@ -1933,3 +1933,52 @@
 .account-counts td.warn {
   color: var(--warn);
 }
+
+/* ---------- Sign-in screen ---------- */
+
+.lock {
+  display: grid;
+  place-items: center;
+  min-height: 100dvh;
+  padding: calc(24px + env(safe-area-inset-top)) 16px calc(24px + env(safe-area-inset-bottom));
+  background: var(--bg);
+}
+
+.lock-card {
+  width: 100%;
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+}
+
+.lock-logo {
+  width: 64px;
+  height: 64px;
+  margin-bottom: 4px;
+}
+
+.lock-card h1 {
+  font-size: 26px;
+}
+
+.lock-card p {
+  color: var(--text-2);
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.lock-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  width: 100%;
+  margin-top: 10px;
+}
+
+.lock-actions .spin {
+  align-self: center;
+}
