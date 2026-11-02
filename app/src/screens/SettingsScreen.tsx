@@ -7,6 +7,7 @@ import { todayKey, WEEKDAYS_SHORT } from '../lib/dates';
 import { LESSONS, nPlural } from '../lib/format';
 import { BillingPicker, DurationChips, PriceField } from '../ui/fields';
 import { ask, useUi } from '../ui/uiStore';
+import { AccountSection } from './AccountSection';
 import { SyncSection } from './SyncSection';
 import { useSync } from '../data/sync';
 
@@ -21,6 +22,8 @@ export function SettingsScreen() {
   const notify = useUi((s) => s.notify);
   const file = useRef<HTMLInputElement>(null);
   const connected = useSync((s) => s.configured);
+  // On the account, wiping this device alone would only hide the records from it.
+  const onAccount = useSync((s) => s.mode === 'cloud');
 
   const download = () => {
     const blob = new Blob([exportData()], { type: 'application/json' });
@@ -159,7 +162,8 @@ export function SettingsScreen() {
           </p>
         </section>
 
-        <SyncSection />
+        <AccountSection />
+        {!onAccount && <SyncSection />}
 
         <section className="section card">
           <h2 className="set-title">Дані</h2>
@@ -197,7 +201,7 @@ export function SettingsScreen() {
                 </button>
               )
             )}
-            {seeded !== 'demo' && (
+            {seeded !== 'demo' && !onAccount && (
               <button className="btn btn-danger-soft" onClick={startClean}>
                 Видалити всі дані
               </button>

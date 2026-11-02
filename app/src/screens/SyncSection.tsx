@@ -20,11 +20,9 @@ export function SyncSection() {
   );
 }
 
-function Connected() {
+/** How the last sync went and what is still waiting to be sent. */
+export function SyncStatusLine() {
   const sync = useSync();
-  const notify = useUi((s) => s.notify);
-  const [copied, setCopied] = useState(false);
-
   const status =
     sync.status === 'syncing'
       ? { icon: <RefreshCw size={18} className="spin" />, text: 'Синхронізація…', tone: '' }
@@ -33,6 +31,25 @@ function Connected() {
         : sync.status === 'error'
           ? { icon: <TriangleAlert size={18} />, text: sync.error ?? 'Помилка', tone: 'bad' }
           : { icon: <Check size={18} />, text: sync.lastSyncAt ? `Синхронізовано о ${fmt(new Date(sync.lastSyncAt), 'HH:mm')}` : 'Підключено', tone: 'good' };
+  return (
+    <>
+      <div className={`sync-status ${status.tone}`}>
+        {status.icon}
+        <span>{status.text}</span>
+      </div>
+      {sync.pending > 0 && sync.status !== 'syncing' && (
+        <p className="field-hint" style={{ marginTop: 6 }}>
+          Ще не відправлено змін: {sync.pending}
+        </p>
+      )}
+    </>
+  );
+}
+
+function Connected() {
+  const sync = useSync();
+  const notify = useUi((s) => s.notify);
+  const [copied, setCopied] = useState(false);
 
   const copy = async () => {
     const code = connectionCode();
@@ -58,15 +75,7 @@ function Connected() {
 
   return (
     <>
-      <div className={`sync-status ${status.tone}`}>
-        {status.icon}
-        <span>{status.text}</span>
-      </div>
-      {sync.pending > 0 && sync.status !== 'syncing' && (
-        <p className="field-hint" style={{ marginTop: 6 }}>
-          Ще не відправлено змін: {sync.pending}
-        </p>
-      )}
+      <SyncStatusLine />
       {sync.outdated && (
         <p className="sync-error">
           Скрипт у таблиці старої версії і ще не вміє зберігати податки — вони поки лише на цьому пристрої. Оновіть його:{' '}
@@ -214,7 +223,7 @@ function ConnectForm() {
   );
 }
 
-function Choice({ title, hint, onClick, busy, primary }: { title: string; hint: string; onClick: () => void; busy: boolean; primary?: boolean }) {
+export function Choice({ title, hint, onClick, busy, primary }: { title: string; hint: string; onClick: () => void; busy: boolean; primary?: boolean }) {
   return (
     <button className={`sync-choice${primary ? ' primary' : ''}`} onClick={onClick} disabled={busy}>
       <b>{title}</b>

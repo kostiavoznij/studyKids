@@ -10,7 +10,7 @@
 ```bash
 cd app
 npm install
-npm run dev        # http://localhost:5173
+npm run dev        # http://localhost:5199 — працює з тестовим проєктом Supabase
 ```
 
 `npm run build` — перевірка типів і збірка в `app/dist`.
@@ -32,5 +32,6 @@ app/src/
   styles/    теми оформлення і стилі
 ```
 
-Синхронізація між пристроями — через Google Таблицю (`backend/Code.gs`),
-як підключити — [docs/SYNC_SETUP.md](docs/SYNC_SETUP.md).
+Записи зберігаються в акаунті (Supabase, вхід через Google) — [docs/ACCOUNTS.md](docs/ACCOUNTS.md),
+схема бази — `supabase/migrations`. Попередня синхронізація через Google Таблицю (`backend/Code.gs`,
+[docs/SYNC_SETUP.md](docs/SYNC_SETUP.md)) працює для пристроїв, які ще не увійшли в акаунт.

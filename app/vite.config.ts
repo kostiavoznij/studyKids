@@ -7,6 +7,8 @@ const base = process.env.BASE_PATH || '/';
 
 export default defineConfig({
   base,
+  // Signing in with Google comes back only to addresses allowed in Supabase, and that's this port.
+  server: { port: 5199, strictPort: true },
   define: {
     __APP_VERSION__: JSON.stringify(process.env.npm_package_version ?? 'dev'),
   },

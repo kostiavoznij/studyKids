@@ -3,6 +3,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { registerSW } from 'virtual:pwa-register';
 import { App } from './App';
+import { justSignedIn, startAccount } from './data/cloud';
 import { useData } from './data/store';
 import { startSync } from './data/sync';
 import './styles/themes.css';
@@ -25,6 +26,11 @@ window.addEventListener('storage', (e) => {
 });
 
 startSync();
+
+// Coming back from Google: show the account, where moving the data over is reported.
+startAccount().then(() => {
+  if (justSignedIn()) window.location.hash = '/settings';
+});
 
 registerSW({ immediate: true });
 

@@ -1,9 +1,12 @@
 import { create } from 'zustand';
+import { cloud, useAccount } from './cloud';
 import { useData, type DataState } from './store';
 import type { ID } from './types';
 
 /*
- * Sync with the Google Sheet backend (backend/Code.gs).
+ * Sync with the server: the account's database (supabase/migrations) or, on
+ * devices not yet signed in, the Google Sheet of earlier versions (backend/Code.gs).
+ * Both speak the same push/pull of changed records.
  *
  * Every record carries updatedAt. A record is "dirty" when its updatedAt differs
  * from the one the server last confirmed; dirty records are pushed, then every
@@ -25,8 +28,10 @@ type AnyRecord = { id: ID; updatedAt: number };
 type Records = Partial<Record<RecType, AnyRecord[]>>;
 
 interface SyncConfig {
-  url: string;
-  key: string;
+  /** 'cloud' — the account; missing — the Google Sheet at url */
+  kind?: 'cloud';
+  url?: string;
+  key?: string;
   /** last server revision we have seen */
   lastRev: number;
   /** `${type}:${id}` → updatedAt the server already has */
@@ -64,9 +69,15 @@ interface SyncState {
   pending: number;
   /** the table's script is older than the app and can't store some records yet */
   outdated: boolean;
+  /** where the data goes: the account or the Google Sheet */
+  mode?: 'cloud' | 'sheet';
+  /** signed in, but this device has records of its own: waits for her to say what to do with them */
+  choosing?: boolean;
 }
 
 export const useSync = create<SyncState>(() => ({ status: 'off', configured: false, pending: 0, outdated: false }));
+
+const modeOf = (cfg: SyncConfig | null) => (cfg ? (cfg.kind === 'cloud' ? 'cloud' : 'sheet') : undefined);
 
 /* ---------- transport ---------- */
 
@@ -87,11 +98,11 @@ const MESSAGES: Record<string, string> = {
   not_json: 'Адреса не відповідає. Перевірте, що в розгортанні вибрано доступ «Будь-хто» (Anyone)',
 };
 
-async function call<T>(cfg: { url: string; key: string }, action: string, payload: object = {}): Promise<T> {
+async function call<T>(cfg: { url?: string; key?: string }, action: string, payload: object = {}): Promise<T> {
   let res: Response;
   try {
     // text/plain keeps this a "simple" request — Apps Script can't answer CORS preflight.
-    res = await fetch(cfg.url, {
+    res = await fetch(cfg.url!, {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({ key: cfg.key, action, ...payload }),
@@ -111,6 +122,41 @@ async function call<T>(cfg: { url: string; key: string }, action: string, payloa
     throw new SyncError(code, MESSAGES[code] ?? data.message ?? code);
   }
   return data;
+}
+
+const CLOUD_PAGE = 500;
+
+/** Supabase answers with an error object instead of throwing. */
+function cloudError(error: { message: string; code?: string }): SyncError {
+  if (!navigator.onLine || /fetch|network|load failed/i.test(error.message)) return new SyncError('network', 'Немає зв’язку з сервером');
+  if (error.code === '42501') return new SyncError('not_allowed', 'Цей акаунт не має доступу до записів');
+  if (error.code === 'PGRST301' || /jwt/i.test(error.message)) return new SyncError('auth', 'Увійдіть в акаунт ще раз');
+  return new SyncError('server', error.message);
+}
+
+async function pushTo(cfg: SyncConfig, records: Records) {
+  if (cfg.kind !== 'cloud') {
+    await call(cfg, 'push', { records });
+    return;
+  }
+  const { error } = await cloud().rpc('push_records', { records });
+  if (error) throw cloudError(error);
+}
+
+async function pullFrom(cfg: SyncConfig, since: number): Promise<{ rev: number; records: Records; types?: string[]; anyType?: boolean }> {
+  if (cfg.kind !== 'cloud') return call(cfg, 'pull', { since });
+  const records: Records = {};
+  let rev = since;
+  for (;;) {
+    const { data, error } = await cloud().from('records').select('type, data, rev').gt('rev', rev).order('rev').limit(CLOUD_PAGE);
+    if (error) throw cloudError(error);
+    for (const row of data as { type: RecType; data: AnyRecord; rev: number }[]) {
+      (records[row.type] ??= []).push(row.data);
+      rev = row.rev;
+    }
+    if (data.length < CLOUD_PAGE) break;
+  }
+  return { rev, records, anyType: true };
 }
 
 /* ---------- merge ---------- */
@@ -203,6 +249,14 @@ async function syncOnce() {
   }
   // Demo data must never reach the real table.
   if (useData.getState().seeded === 'demo') return;
+  if (cfg.kind === 'cloud') {
+    const account = useAccount.getState();
+    if (account.status === 'loading') return;
+    if (account.status !== 'in' || account.role !== 'admin') {
+      useSync.setState({ status: 'error', error: account.status === 'out' ? 'Увійдіть в акаунт' : 'Немає доступу до записів' });
+      return;
+    }
+  }
   if (!navigator.onLine) {
     useSync.setState({ status: 'offline' });
     return;
@@ -211,11 +265,11 @@ async function syncOnce() {
   try {
     const known = serverTypes(cfg);
     for (const batch of batches(dirtyRecords(useData.getState(), cfg.confirmed, known))) {
-      await call(cfg, 'push', { records: batch });
+      await pushTo(cfg, batch);
       for (const type of known) for (const rec of batch[type] ?? []) cfg.confirmed[`${type}:${rec.id}`] = rec.updatedAt;
       saveConfig(cfg);
     }
-    const res = await call<{ rev: number; records: Records; types?: string[]; anyType?: boolean }>(cfg, 'pull', { since: cfg.lastRev });
+    const res = await pullFrom(cfg, cfg.lastRev);
     applyRemote(res.records, cfg.confirmed);
     cfg.lastRev = res.rev;
     cfg.types = res.types ?? [...BASE_TYPES];
@@ -237,10 +291,23 @@ async function syncOnce() {
   }
 }
 
-/** Sets up the triggers once; they do nothing until a table is connected. */
+/** Sets up the triggers once; they do nothing until a table or the account is connected. */
 export function startSync() {
   const cfg = loadConfig();
-  useSync.setState({ configured: !!cfg, outdated: !!cfg && isOutdated(cfg) });
+  useSync.setState({ configured: !!cfg, outdated: !!cfg && isOutdated(cfg), mode: modeOf(cfg) });
+
+  // Signing in as the admin moves this device onto the account. A device with
+  // records of its own asks first, so nobody's test data lands in her account by accident.
+  useAccount.subscribe((a, prev) => {
+    if (a.status === prev.status && a.role === prev.role) return;
+    if (a.status === 'in' && a.role === 'admin') {
+      if (loadConfig()?.kind === 'cloud' || !hasOwnRecords()) moveToCloud('replace');
+      else useSync.setState({ choosing: true });
+    } else {
+      useSync.setState({ choosing: false });
+      if (loadConfig()?.kind === 'cloud') syncNow();
+    }
+  });
 
   let timer: number | undefined;
   useData.subscribe((s, prev) => {
@@ -292,17 +359,39 @@ export function checkConnection(url: string, key: string) {
 export async function connect(url: string, key: string, mode: 'replace' | 'merge') {
   if (mode === 'replace' || useData.getState().seeded === 'demo') useData.getState().clearAll();
   saveConfig({ url, key, lastRev: 0, confirmed: {} });
-  useSync.setState({ configured: true, status: 'idle', error: undefined });
+  useSync.setState({ configured: true, status: 'idle', error: undefined, mode: 'sheet' });
   await call({ url, key }, 'hello', { url }).catch(() => undefined);
   await syncNow();
 }
 
+/** Real records on this device (demo data doesn't count). */
+export function hasOwnRecords(): boolean {
+  const s = useData.getState();
+  return s.seeded !== 'demo' && TYPES.some((t) => Object.keys(s[t]).length > 0);
+}
+
+/**
+ * Moves this device onto the account. 'merge' sends everything on it up, joined
+ * with what the account already has (the newer change of each record wins);
+ * 'replace' drops this device's records and only takes the account's. Demo data
+ * is always dropped. The Google Sheet is left alone as an archive.
+ */
+export function moveToCloud(mode: 'merge' | 'replace'): Promise<void> {
+  if (loadConfig()?.kind !== 'cloud') {
+    if (mode === 'replace' || useData.getState().seeded === 'demo') useData.getState().clearAll();
+    saveConfig({ kind: 'cloud', lastRev: 0, confirmed: {}, anyType: true });
+    useSync.setState({ configured: true, status: 'idle', error: undefined, outdated: false, mode: 'cloud' });
+  }
+  useSync.setState({ choosing: false });
+  return syncNow();
+}
+
 export function disconnect() {
   localStorage.removeItem(STORAGE);
-  useSync.setState({ configured: false, status: 'off', pending: 0, outdated: false, error: undefined, lastSyncAt: undefined });
+  useSync.setState({ configured: false, status: 'off', pending: 0, outdated: false, error: undefined, lastSyncAt: undefined, mode: undefined, choosing: false });
 }
 
 export function connectionCode(): string | null {
   const cfg = loadConfig();
-  return cfg ? `${cfg.url} ${cfg.key}` : null;
+  return cfg?.url ? `${cfg.url} ${cfg.key}` : null;
 }
