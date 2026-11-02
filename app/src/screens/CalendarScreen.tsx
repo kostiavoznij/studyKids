@@ -552,6 +552,7 @@ function LessonBlock({
   now,
   style,
   narrow,
+  squeezed,
   refEl,
   delay = 0,
 }: {
@@ -559,6 +560,8 @@ function LessonBlock({
   now: string;
   style: CSSProperties;
   narrow?: boolean;
+  /** shares its column with another lesson at the same time */
+  squeezed?: boolean;
   refEl?: Ref<HTMLButtonElement>;
   delay?: number;
 }) {
@@ -588,6 +591,8 @@ function LessonBlock({
   const compactRow = height < tight;
   const sizeClass = compactRow ? ' compact' : height < full ? ' tight' : '';
   const value = lessonValue(lesson);
+  // Side by side in a week column there is room only for the name.
+  const bare = narrow && squeezed;
 
   const icon =
     trial && status !== 'cancelled' ? (
@@ -606,6 +611,7 @@ function LessonBlock({
       className={`lesson-block${sizeClass}`}
       data-status={status}
       data-kind={trial ? 'trial' : undefined}
+      data-squeezed={bare ? '' : undefined}
       style={{ ...style, '--c': color, animationDelay: `${delay}ms` } as CSSProperties}
       onClick={(e) => {
         e.stopPropagation();
@@ -614,7 +620,7 @@ function LessonBlock({
       aria-label={`${title}, ${time}`}
     >
       <span className="lb-row">
-        {lesson.groupId && <Users size={narrow ? 11 : 14} strokeWidth={2.4} style={{ flex: 'none' }} />}
+        {lesson.groupId && !bare && <Users size={narrow ? 11 : 14} strokeWidth={2.4} style={{ flex: 'none' }} />}
         <span className="lb-name">{title}</span>
         {!narrow && !compactRow && value > 0 && status !== 'cancelled' && (
           <span className="lb-price">{money(value)}</span>
@@ -624,10 +630,11 @@ function LessonBlock({
             <Wallet size={narrow ? 11 : 14} strokeWidth={2.4} />
           </span>
         )}
-        {icon && <span className="lb-icon">{icon}</span>}
+        {icon && !bare && <span className="lb-icon">{icon}</span>}
       </span>
       {compactRow ? (
-        !narrow && <span className="lb-meta">{time}</span>
+        // In the week grid the start time fits next to the name only on a wide screen.
+        <span className={narrow ? 'lb-meta lb-wide' : 'lb-meta'}>{narrow ? timeOf(lesson.start) : time}</span>
       ) : (
         <span className="lb-meta">
           {narrow ? timeOf(lesson.start) : time}
@@ -734,6 +741,7 @@ function WeekView({ date, byDay, now }: { date: Date; byDay: Map<string, Lesson[
                   lesson={l}
                   now={now}
                   narrow
+                  squeezed={cols > 1}
                   style={{
                     top: top(s) + 1,
                     height: Math.max(22, (l.duration / 60) * WHOUR - 2),

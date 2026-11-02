@@ -418,8 +418,13 @@
 .wk-col .lesson-block {
   left: 2px;
   right: 2px;
-  padding: 4px 5px 4px 8px;
+  padding: 4px 3px 4px 6px;
   border-radius: 9px;
+}
+
+/* A phone's week column is ~40px wide: the name and time matter more than the status icon (the day view has it). */
+.wk-col .lb-icon {
+  display: none;
 }
 
 .wk-col .lesson-block::before {
@@ -431,7 +436,46 @@
 }
 
 .wk-col .lb-meta {
-  font-size: 10.5px;
+  font-size: 10px;
+  letter-spacing: -0.2px;
+}
+
+.wk-col .lesson-block[data-kind='trial'] {
+  border-width: 1px;
+}
+
+.wk-col .lb-name,
+.wk-col .lb-meta {
+  line-height: 1.25;
+}
+
+/* A 45-minute lesson is only ~37px tall in the week grid: both lines must fit. */
+.wk-col .lesson-block.tight {
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+
+.wk-col .lesson-block.tight .lb-name,
+.wk-col .lesson-block.tight .lb-meta {
+  line-height: 1.15;
+}
+
+.wk-col .lesson-block.compact {
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.wk-col .lesson-block.compact .lb-meta {
+  flex: none;
+}
+
+.wk-col .lesson-block[data-squeezed] {
+  padding-left: 6px;
+  padding-right: 3px;
+}
+
+.wk-col .lb-wide {
+  display: none;
 }
 
 @media (min-width: 900px) {
@@ -451,6 +495,15 @@
 
   .wk-col .lb-meta {
     font-size: 12px;
+    letter-spacing: normal;
+  }
+
+  .wk-col .lb-wide {
+    display: block;
+  }
+
+  .wk-col .lb-icon {
+    display: grid;
   }
 
   .wk-head .sum {

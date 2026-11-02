@@ -244,7 +244,12 @@ export const useData = create<Store>()(
           for (const g of Object.values(groups)) {
             if (g.studentIds.includes(id)) groups[g.id] = stamp({ ...g, studentIds: g.studentIds.filter((x) => x !== id) });
           }
-          set({ students: { ...s.students, [id]: stamp({ ...st, deletedAt: Date.now() }) }, lessons, groups });
+          // A deleted student's payments would still count as money that came in, with nowhere to see them.
+          const payments = { ...s.payments };
+          for (const p of Object.values(payments)) {
+            if (p.studentId === id && !p.deletedAt) payments[p.id] = stamp({ ...p, deletedAt: Date.now() });
+          }
+          set({ students: { ...s.students, [id]: stamp({ ...st, deletedAt: Date.now() }) }, lessons, groups, payments });
         },
 
         addNote(studentId, text) {

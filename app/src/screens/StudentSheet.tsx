@@ -1,9 +1,10 @@
 import { Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { SUBJECTS, TIMEZONES } from '../data/constants';
-import { useLiveStudents } from '../data/selectors';
+import { useLivePayments, useLiveStudents } from '../data/selectors';
 import { useData } from '../data/store';
 import type { Billing, Contact, Slot, StudentStatus } from '../data/types';
+import { money, nPlural, PAYMENTS } from '../lib/format';
 import { Segmented, Sheet } from '../ui/components';
 import { BillingPicker, ColorPicker, DurationChips, PriceField, SlotEditor, StudentChips } from '../ui/fields';
 import { navigate } from '../ui/router';
@@ -21,6 +22,7 @@ export function StudentSheet({ id, onClose }: { id?: string; onClose: () => void
   const settings = useData((s) => s.settings);
   const saveStudent = useData((s) => s.saveStudent);
   const deleteStudent = useData((s) => s.deleteStudent);
+  const payments = useLivePayments();
   const notify = useUi((s) => s.notify);
 
   const [name, setName] = useState(existing?.name ?? '');
@@ -60,10 +62,14 @@ export function StudentSheet({ id, onClose }: { id?: string; onClose: () => void
 
   const remove = async () => {
     if (!existing) return;
+    const paid = payments.filter((p) => p.studentId === existing.id);
+    const total = paid.reduce((sum, p) => sum + p.amount, 0);
     const ok = await ask({
       title: `Видалити ${existing.name}?`,
-      text: 'Проведені уроки залишаться в статистиці, а майбутні заплановані зникнуть. Якщо учень просто закінчив навчання — краще перенести в архів.',
-      ok: 'Видалити',
+      text: paid.length
+        ? `Разом з учнем буде видалено всі його оплати: ${nPlural(paid.length, PAYMENTS)} на ${money(total)}. Вони зникнуть із «Фінансів», податків і звірки з банком, а майбутні уроки — з календаря. Якщо учень просто більше не займається — краще перенести в архів: уроки й оплати збережуться.`
+        : 'Проведені уроки залишаться в статистиці, а майбутні заплановані зникнуть. Якщо учень просто закінчив навчання — краще перенести в архів.',
+      ok: paid.length ? 'Видалити з оплатами' : 'Видалити',
       danger: true,
     });
     if (!ok) return;

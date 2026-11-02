@@ -43,6 +43,7 @@ export const TOPICS: [string, string, string] = ['тема', 'теми', 'тем
 export const STUDENTS: [string, string, string] = ['учень', 'учні', 'учнів'];
 export const DAYS: [string, string, string] = ['день', 'дні', 'днів'];
 export const TRIALS: [string, string, string] = ['пробний', 'пробні', 'пробних'];
+export const PAYMENTS: [string, string, string] = ['оплата', 'оплати', 'оплат'];
 
 export function initials(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
