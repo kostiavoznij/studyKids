@@ -80,8 +80,8 @@ export const DAY_OFF_KINDS: { value: DayOffKind; label: string; short: string }[
 
 export const dayOffLabel = (kind: DayOffKind) => DAY_OFF_KINDS.find((k) => k.value === kind)?.label ?? 'Інше';
 
-/** How many lessons a payment can cover — families pay for 1 up to 8 at a time. */
-export const PACKAGES = [1, 2, 3, 4, 5, 6, 7, 8];
+/** How many lessons a payment can cover — families pay for 1 up to 10 at a time. */
+export const PACKAGES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
 export const DEFAULT_SETTINGS: Settings = {
   theme: 'dark',
