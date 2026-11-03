@@ -91,3 +91,6 @@ export function usePreviewing(): Required<Pick<Preview, 'role'>> & Preview | nul
 }
 
 export const ROLE_LABEL: Record<Role, string> = { admin: 'адміністратор', manager: 'менеджер', teacher: 'вчителька' };
+
+/** Avatar colour of a role; a teacher wears the colour of her card instead. */
+export const ROLE_COLOR: Record<Role, string> = { admin: 'violet', manager: 'blue', teacher: 'teal' };

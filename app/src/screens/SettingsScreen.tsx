@@ -6,6 +6,7 @@ import { useData } from '../data/store';
 import type { ThemeId } from '../data/types';
 import { todayKey, WEEKDAYS_SHORT } from '../lib/dates';
 import { LESSONS, nPlural } from '../lib/format';
+import { WhoCard } from '../ui/AccountChip';
 import { BillingPicker, DurationChips, PriceField } from '../ui/fields';
 import { ask, useUi } from '../ui/uiStore';
 import { AccountSection } from './AccountSection';
@@ -67,6 +68,8 @@ export function SettingsScreen() {
         <div className="screen-head">
           <h1>Налаштування</h1>
         </div>
+
+        <WhoCard />
 
         <section className="section">
           <h2 className="set-title">Оформлення</h2>

@@ -1,7 +1,6 @@
 import { LogIn, LogOut, RefreshCw, UserRound } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { ROLE_LABEL } from '../data/access';
-import { PreviewPicker } from '../ui/AccountChip';
 import { retryAccount, serverCounts, signIn, signOut, useAccount, type Role } from '../data/cloud';
 import { useData, type DataState } from '../data/store';
 import { disconnect, moveToCloud, syncNow, useSync } from '../data/sync';
@@ -154,7 +153,6 @@ function SignedIn({ email, name, role }: { email: string; name: string; role: Ro
         </p>
       )}
       <SyncStatusLine />
-      <PreviewPicker />
       {role === 'admin' && <table className="account-counts">
         <thead>
           <tr>

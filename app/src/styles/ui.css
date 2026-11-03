@@ -1045,33 +1045,112 @@ button.list-item:active {
 
 /* ---------- Who is signed in ---------- */
 
-.account-chip {
+.account-box {
   display: none;
 }
 
 @media (min-width: 900px) {
+  .account-box {
+    display: block;
+    position: relative;
+    margin-top: auto;
+  }
+
+  .account-box + .side-today {
+    margin-top: 8px;
+  }
+
   .account-chip {
     display: flex;
     align-items: center;
     gap: 10px;
-    margin-top: auto;
+    width: 100%;
     padding: 10px 12px;
     border-radius: 14px;
     text-align: left;
     transition: background-color 0.15s ease;
   }
 
-  .account-chip:hover {
+  .account-chip:hover,
+  .account-chip[aria-expanded='true'] {
     background: var(--surface-2);
   }
 
   .account-chip[data-preview] {
     background: var(--warn-soft);
   }
+}
 
-  .account-chip + .side-today {
-    margin-top: 8px;
-  }
+.account-chip-caret {
+  flex: none;
+  margin-left: auto;
+  color: var(--text-3);
+}
+
+/* «Дивитися як» opens upwards from the account in the sidebar. */
+.account-menu {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 30;
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow-2);
+  animation: fade-in 0.15s ease both;
+}
+
+.account-menu-title {
+  padding: 6px 10px 4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-3);
+}
+
+.account-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 6px 10px;
+  border-radius: 10px;
+  text-align: left;
+  font-weight: 650;
+  color: var(--text);
+}
+
+.account-menu-item:hover {
+  background: var(--surface-2);
+}
+
+.account-menu-item[aria-checked='true'] {
+  background: var(--accent-soft);
+}
+
+.account-menu-check {
+  flex: none;
+  margin-left: auto;
+  color: var(--accent);
+}
+
+.account-menu-sep {
+  height: 1px;
+  margin: 6px 4px;
+  background: var(--border);
+}
+
+.who-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.who-card .chips {
+  margin: 6px 0 8px;
 }
 
 .account-chip-text {
@@ -1089,6 +1168,9 @@ button.list-item:active {
 }
 
 .account-chip-text span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 12.5px;
   color: var(--text-3);
   font-weight: 650;

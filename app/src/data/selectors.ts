@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useUi } from '../ui/uiStore';
-import { useAccess, usePreviewing } from './access';
+import { ROLE_COLOR, useAccess, usePreviewing } from './access';
 import { cloudEnabled, useAccount, type Role } from './cloud';
 import { withCorrections } from './bank';
 import { colorHex } from './constants';
@@ -154,6 +154,8 @@ export interface Me {
   name: string;
   email: string;
   role: Role;
+  /** avatar colour */
+  color: string;
   /** looking through someone else's eyes */
   previewing: boolean;
 }
@@ -165,13 +167,14 @@ export function useMe(): Me | null {
   const teachers = useData((s) => s.teachers);
   if (!cloudEnabled || account.status !== 'in' || !account.role) return null;
   if (preview) {
-    const name = preview.role === 'teacher' ? (teachers[preview.teacherId ?? '']?.name ?? 'Вчителька') : 'Менеджер';
-    return { name, email: '', role: preview.role, previewing: true };
+    const card = preview.role === 'teacher' ? teachers[preview.teacherId ?? ''] : undefined;
+    const name = preview.role === 'teacher' ? (card?.name ?? 'Вчителька') : 'Менеджер';
+    return { name, email: '', role: preview.role, color: card?.color ?? ROLE_COLOR[preview.role], previewing: true };
   }
   const email = account.email ?? '';
   // A teacher has no row in the members list; her name is on her card.
   const card = account.role === 'teacher' ? Object.values(teachers).find((t) => t.email === email) : undefined;
-  return { name: account.name || card?.name || email, email, role: account.role, previewing: false };
+  return { name: account.name || card?.name || email, email, role: account.role, color: card?.color ?? ROLE_COLOR[account.role], previewing: false };
 }
 
 const byTeacherCache = new WeakMap<object, Map<ID, Record<ID, Lesson>>>();
