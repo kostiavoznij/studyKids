@@ -1,6 +1,6 @@
 import { Trash2 } from 'lucide-react';
 import { useRef, useState } from 'react';
-import { BUILT_IN, PLACEHOLDERS, renderBot, sampleValues, templateText } from '../data/botText';
+import { BUILT_IN, PLACEHOLDERS, reminderSchedule, renderBot, sampleValues, templateText } from '../data/botText';
 import { useLiveStudents } from '../data/selectors';
 import { useData } from '../data/store';
 import { teacherById } from '../data/teachers';
@@ -24,7 +24,7 @@ export function BotTemplateSheet({ id, kind, onClose }: { id?: ID; kind: BotKind
 
   const builtIn = kind === 'free' ? null : kind;
   const existing = id ? rec[id] : builtIn ? rec[builtIn] : undefined;
-  const edited = !!existing && !existing.deletedAt;
+  const edited = !!existing && !existing.deletedAt && (!builtIn || existing.text !== BUILT_IN[builtIn].text);
   const [name, setName] = useState(builtIn ? BUILT_IN[builtIn].name : (existing?.name ?? ''));
   const [text, setText] = useState(builtIn ? templateText(rec, builtIn) : (existing?.text ?? 'Добрий день! '));
   const tokens = PLACEHOLDERS.filter((p) => p.kinds.includes(kind));
@@ -52,7 +52,9 @@ export function BotTemplateSheet({ id, kind, onClose }: { id?: ID; kind: BotKind
     if (!builtIn) return;
     const ok = await ask({ title: 'Повернути стандартний текст?', text: 'Ваш текст цього шаблону буде замінено стандартним.', ok: 'Повернути' });
     if (!ok) return;
-    deleteBotTemplate(builtIn);
+    // The reminder template also holds the schedule: only its text goes back.
+    if (builtIn === 'reminder') saveBotTemplate({ kind: 'reminder', name: BUILT_IN.reminder.name, text: BUILT_IN.reminder.text, schedule: reminderSchedule(rec) });
+    else deleteBotTemplate(builtIn);
     notify('Повернуто стандартний текст');
     onClose();
   };

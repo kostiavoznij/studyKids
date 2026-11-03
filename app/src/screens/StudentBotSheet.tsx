@@ -3,7 +3,10 @@ import { useEffect, useState } from 'react';
 import { botHistory, chatLabel, chatsOf, inviteLink, inviteText, refreshBot, unlinkChat, useBot, type BotChat, type HistoryItem } from '../data/bot';
 import type { Student } from '../data/types';
 import { fmt } from '../lib/dates';
-import { Avatar, Sheet } from '../ui/components';
+import { Avatar, Sheet, Switch } from '../ui/components';
+import { reminderLabel, reminderSchedule } from '../data/botText';
+import { useData } from '../data/store';
+import { useSaveSchedule } from './BotReminders';
 import { ask, useUi } from '../ui/uiStore';
 
 /*
@@ -33,6 +36,10 @@ export function StudentBotSheet({ student, onClose, onWrite }: { student: Studen
   const [problem, setProblem] = useState<string>();
   const [history, setHistory] = useState<HistoryItem[] | null>(null);
   const reachable = mine.some((c) => !c.blocked);
+  const schedule = reminderSchedule(useData((s) => s.botTemplates));
+  const saveSchedule = useSaveSchedule();
+  const reminded = schedule.who === 'all' || schedule.students.includes(student.id);
+  const when = [...schedule.before.map(reminderLabel), ...(schedule.evening ? [`напередодні о ${schedule.evening}`] : [])].join(', ');
 
   useEffect(() => {
     refreshBot(true);
@@ -167,6 +174,29 @@ export function StudentBotSheet({ student, onClose, onWrite }: { student: Studen
       <p className="field-hint" style={{ marginTop: 10 }}>
         Посилання особисте: хто його відкриє, отримуватиме повідомлення про ці уроки. Якщо воно потрапило не туди, створіть нове, а зайвий чат відключіть хрестиком.
       </p>
+
+      {reachable && schedule.enabled && (
+        <div className="toggle-row" style={{ marginTop: 14 }}>
+          <div>
+            <div style={{ fontWeight: 700 }}>Нагадування перед уроками</div>
+            <div className="field-hint">
+              {schedule.who === 'all' ? 'Отримують усі, хто підключив бота' : when ? `Бот нагадає ${when}` : 'Час нагадувань — у Налаштуваннях'}
+            </div>
+          </div>
+          {schedule.who === 'chosen' && (
+          <Switch
+            checked={reminded}
+            onChange={(on) =>
+              saveSchedule({
+                ...schedule,
+                students: on ? [...new Set([...schedule.students, student.id])] : schedule.students.filter((x) => x !== student.id),
+              })
+            }
+            label="Нагадування перед уроками"
+          />
+          )}
+        </div>
+      )}
 
       {reachable && (
         <button className="btn btn-soft btn-block" style={{ marginTop: 16 }} onClick={onWrite}>

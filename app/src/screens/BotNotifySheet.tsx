@@ -2,6 +2,7 @@ import { Send } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
 import { sendBot, useBot, useBotResult, type SendSummary } from '../data/bot';
 import { BUILT_IN, dayPhrase, lessonLines, ownTemplates, periodPhrase, PLACEHOLDERS, renderBot, templateText, timePhrase, type BotValues } from '../data/botText';
+import { todayKey } from '../lib/dates';
 import { useData } from '../data/store';
 import { teacherById, teacherOf } from '../data/teachers';
 import type { BotKind, ID, Lesson, Student } from '../data/types';
@@ -47,7 +48,7 @@ export function BotNotifySheet({ req, onClose }: { req: NotifyRequest; onClose: 
   const withBot = families.filter((f) => chats.some((c) => c.studentId === f.student.id && !c.blocked));
   const without = families.filter((f) => !withBot.includes(f));
 
-  const builtIn = req.mode === 'free' ? null : req.mode;
+  const builtIn = req.mode === 'free' || req.mode === 'reminder' ? null : req.mode;
   const stored = builtIn ? templateText(data.botTemplates, builtIn) : FREE_START;
   const [text, setText] = useState(stored);
   const [remember, setRemember] = useState(false);
@@ -236,7 +237,7 @@ function familiesFor(req: NotifyRequest, d: ReturnType<typeof useData.getState>)
           student: st,
           values: {
             name: st.name,
-            date: dayPhrase(l.start.slice(0, 10)),
+            date: dayPhrase(l.start.slice(0, 10), todayKey()),
             time: timePhrase(l.start, st.timezone),
             teacher: teacherName(l),
             reason: lowerFirst(reason),
@@ -260,8 +261,8 @@ function familiesFor(req: NotifyRequest, d: ReturnType<typeof useData.getState>)
       student: st,
       values: {
         name: st.name,
-        period: from ? periodPhrase(from, to) : '',
-        lessons: lessonLines(ls, st.timezone),
+        period: from ? periodPhrase(from, to, todayKey()) : '',
+        lessons: lessonLines(ls.map((l) => l.start), st.timezone),
         teacher: ls[0] ? teacherName(ls[0]) : '',
         reason: lowerFirst(req.reason ?? ''),
       },

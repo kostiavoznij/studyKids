@@ -11,7 +11,7 @@
  *                          connected to its student; every attempt is logged.
  *                          The answer says, per student, how many got it.
  */
-import { botToken, callerRole, callerRpc, CORS, json, TelegramError, tg, webhookSecret, webhookUrl } from '../_shared/bot.ts';
+import { botToken, callerRole, callerRpc, cronKey, CORS, deliver, json, remindUrl, TelegramError, tg, webhookSecret, webhookUrl } from '../_shared/bot.ts';
 
 interface Me {
   username: string;
@@ -30,10 +30,13 @@ const DESCRIPTION =
   'Щоб підключитися, відкрийте посилання, яке надіслала вчителька, і натисніть «Почати».';
 const SHORT_DESCRIPTION = 'Нагадування та зміни в розкладі уроків української.';
 
-async function status(token: string) {
+async function status(req: Request, token: string) {
   const me = await tg<Me>(token, 'getMe');
   const hook = await tg<WebhookInfo>(token, 'getWebhookInfo');
+  // Whether the database calls the reminders every minute (step 3); null before that migration.
+  const reminders = await callerRpc(req, 'bot_cron_status').catch(() => null);
   return {
+    reminders,
     configured: true,
     username: me.username,
     name: me.first_name,
@@ -61,18 +64,6 @@ interface Result {
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-/** One message to one chat; waits once when Telegram asks to slow down. */
-async function deliver(token: string, chatId: number, text: string) {
-  const body = { chat_id: chatId, text, link_preview_options: { is_disabled: true } };
-  try {
-    await tg(token, 'sendMessage', body);
-  } catch (e) {
-    if (!(e instanceof TelegramError) || e.code !== 429) throw e;
-    await sleep(Math.min(e.retryAfter || 1, 10) * 1000);
-    await tg(token, 'sendMessage', body);
-  }
-}
 
 async function send(req: Request, token: string, body: { kind?: string; messages?: unknown }) {
   const kind = KINDS.includes(body.kind ?? '') ? (body.kind as string) : '';
@@ -117,7 +108,7 @@ async function send(req: Request, token: string, body: { kind?: string; messages
   return json({ results: [...results.values()] });
 }
 
-async function setup(token: string) {
+async function setup(req: Request, token: string) {
   await tg(token, 'setWebhook', {
     url: webhookUrl(),
     secret_token: await webhookSecret(token),
@@ -132,7 +123,9 @@ async function setup(token: string) {
   });
   await tg(token, 'setMyDescription', { description: DESCRIPTION });
   await tg(token, 'setMyShortDescription', { short_description: SHORT_DESCRIPTION });
-  return status(token);
+  // Reminders: the database calls the remind function every minute.
+  await callerRpc(req, 'bot_schedule', { p_url: remindUrl(), p_key: await cronKey(token) });
+  return status(req, token);
 }
 
 Deno.serve(async (req) => {
@@ -153,11 +146,11 @@ Deno.serve(async (req) => {
   if (!token) return json({ configured: false });
 
   try {
-    if (body.action === 'status') return json(await status(token));
+    if (body.action === 'status') return json(await status(req, token));
     if (body.action === 'send') return await send(req, token, body);
     if (body.action === 'setup') {
       if (role !== 'admin') return json({ error: 'Підключати бота може лише адміністратор' }, 403);
-      return json(await setup(token));
+      return json(await setup(req, token));
     }
     return json({ error: 'Невідома дія' }, 400);
   } catch (e) {

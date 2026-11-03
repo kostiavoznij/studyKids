@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
@@ -8,7 +9,12 @@ const base = process.env.BASE_PATH || '/';
 export default defineConfig({
   base,
   // Signing in with Google comes back only to addresses allowed in Supabase, and that's this port.
-  server: { port: 5199, strictPort: true },
+  // The bot's text formatting is shared with the server functions (supabase/functions/_shared).
+  server: {
+    port: 5199,
+    strictPort: true,
+    fs: { allow: [fileURLToPath(new URL('.', import.meta.url)), fileURLToPath(new URL('../supabase/functions/_shared', import.meta.url))] },
+  },
   define: {
     __APP_VERSION__: JSON.stringify(process.env.npm_package_version ?? 'dev'),
   },

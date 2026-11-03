@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useAccess } from '../data/access';
 import { refreshBot, setupBot, useBot } from '../data/bot';
 import { BUILT_IN, ownTemplates } from '../data/botText';
+import { BotReminders } from './BotReminders';
 import { useData } from '../data/store';
 import { useLiveStudents } from '../data/selectors';
 import { useUi } from '../ui/uiStore';
@@ -82,12 +83,15 @@ export function BotSection() {
         </button>
         {admin && status.connected && (
           <button className="btn btn-ghost btn-sm" disabled={busy} onClick={connect}>
-            Оновити опис і команди
+            Оновити налаштування бота
           </button>
         )}
       </div>
 
       {problem && <p className="sync-error">{problem}</p>}
+
+      <h3 className="bot-subtitle">Нагадування</h3>
+      <BotReminders />
 
       <h3 className="bot-subtitle">Шаблони повідомлень</h3>
       <div className="list">

@@ -1,3 +1,6 @@
+import type { BotKind, ReminderSchedule } from '../../../supabase/functions/_shared/botFormat';
+export type { BotKind, ReminderSchedule };
+
 export type ID = string;
 
 /**
@@ -332,19 +335,20 @@ export interface Settings {
   calendarView: CalendarView;
 }
 
-/** What a bot message is about. */
-export type BotKind = 'cancel' | 'cancelMany' | 'free';
 
 /**
- * A text the bot sends families. The built-in ones have the ids 'cancel' and
- * 'cancelMany' and exist as records only once edited (until then the default
- * text applies); her own ones ('free') have random ids and a name.
+ * A text the bot sends families. The built-in ones have the ids 'cancel',
+ * 'cancelMany' and 'reminder' and exist as records only once edited (until then
+ * the default text applies); her own ones ('free') have random ids and a name.
+ * The 'reminder' one also holds when reminders go out and to whom.
  */
 export interface BotTemplate {
   id: ID;
   kind: BotKind;
   name: string;
   text: string;
+  /** only on 'reminder' */
+  schedule?: ReminderSchedule;
   createdAt: number;
   updatedAt: number;
   deletedAt?: number;

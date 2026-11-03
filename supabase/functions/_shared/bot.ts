@@ -14,12 +14,19 @@ export const botToken = () => Deno.env.get('TELEGRAM_BOT_TOKEN') ?? '';
 /** Where Telegram delivers the bot's messages. */
 export const webhookUrl = () => `${SUPABASE_URL}/functions/v1/telegram`;
 
-/** The header Telegram sends with every update; proves it really is Telegram. */
-export async function webhookSecret(token: string): Promise<string> {
-  const bytes = new TextEncoder().encode(`uroky-telegram-webhook:${token}`);
-  const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+/** What the database calls every minute to send due reminders. */
+export const remindUrl = () => `${SUPABASE_URL}/functions/v1/remind`;
+
+async function sha256(text: string): Promise<string> {
+  const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)));
   return Array.from(hash, (b) => b.toString(16).padStart(2, '0')).join('');
 }
+
+/** The header Telegram sends with every update; proves it really is Telegram. */
+export const webhookSecret = (token: string) => sha256(`uroky-telegram-webhook:${token}`);
+
+/** The header the database's minute-by-minute call carries; proves it comes from there. */
+export const cronKey = (token: string) => sha256(`uroky-cron:${token}`);
 
 export class TelegramError extends Error {
   constructor(
@@ -53,6 +60,20 @@ export async function tg<T = unknown>(token: string, method: string, body: Recor
   return json.result as T;
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** One message to one chat; waits once when Telegram asks to slow down. */
+export async function deliver(token: string, chatId: number, text: string) {
+  const body = { chat_id: chatId, text, link_preview_options: { is_disabled: true } };
+  try {
+    await tg(token, 'sendMessage', body);
+  } catch (e) {
+    if (!(e instanceof TelegramError) || e.code !== 429) throw e;
+    await sleep(Math.min(e.retryAfter || 1, 10) * 1000);
+    await tg(token, 'sendMessage', body);
+  }
+}
+
 /** The project's secret key: the new named one, or the legacy service_role key. */
 function serviceKey(): string {
   try {
@@ -70,6 +91,14 @@ function serviceHeaders(): Record<string, string> {
   // A legacy key is a JWT and goes in Authorization too; a new sb_secret_ key goes in apikey alone.
   if (!key.startsWith('sb_')) headers.authorization = `Bearer ${key}`;
   return headers;
+}
+
+/** Reads a table as the service (past row level security); `query` is a PostgREST query. */
+export async function serviceGet<T = unknown>(table: string, query: string): Promise<T[]> {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${query}`, { headers: serviceHeaders() });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`${table}: ${res.status} ${text}`);
+  return JSON.parse(text) as T[];
 }
 
 /** Calls a database function as the service (past row level security). */

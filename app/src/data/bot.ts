@@ -33,6 +33,8 @@ export interface BotStatus {
   connected?: boolean;
   pending?: number;
   lastError?: string;
+  /** whether the database calls the reminders every minute; null before step 3 is on the server */
+  reminders?: { scheduled: boolean; lastRun: string | null; lastStatus: string | null } | null;
 }
 
 interface BotState {

@@ -127,7 +127,7 @@ interface Actions {
   savePayout(input: PayoutInput): ID;
   deletePayout(id: ID): void;
   /** A built-in template is saved under its kind; her own get a random id. */
-  saveBotTemplate(input: Pick<BotTemplate, 'kind' | 'name' | 'text'> & { id?: ID }): ID;
+  saveBotTemplate(input: Pick<BotTemplate, 'kind' | 'name' | 'text'> & { id?: ID; schedule?: BotTemplate['schedule'] }): ID;
   /** Her own template goes; a built-in one goes back to the default text. */
   deleteBotTemplate(id: ID): void;
   updateSettings(patch: Partial<Settings>): void;
@@ -610,8 +610,8 @@ export const useData = create<Store>()(
           const prev = s.botTemplates[id];
           const t = Date.now();
           const next: BotTemplate = prev
-            ? stamp({ ...prev, name: input.name, text: input.text, deletedAt: undefined })
-            : { id, kind: input.kind, name: input.name, text: input.text, createdAt: t, updatedAt: t };
+            ? stamp({ ...prev, name: input.name, text: input.text, ...(input.schedule ? { schedule: input.schedule } : {}), deletedAt: undefined })
+            : { id, kind: input.kind, name: input.name, text: input.text, ...(input.schedule ? { schedule: input.schedule } : {}), createdAt: t, updatedAt: t };
           set({ botTemplates: { ...s.botTemplates, [id]: next } });
           return id;
         },
