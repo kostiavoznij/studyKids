@@ -33,6 +33,23 @@
   max-width: 420px;
 }
 
+/* Whose lessons: everyone's or one teacher's. Scrolls sideways when there are many. */
+.teacher-filter {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding-bottom: 12px;
+  scrollbar-width: none;
+}
+
+.teacher-filter::-webkit-scrollbar {
+  display: none;
+}
+
+.teacher-filter .dot {
+  width: 9px;
+  height: 9px;
+}
+
 /* ---------- week strip ---------- */
 
 .week-strip {
@@ -705,6 +722,16 @@
 .dayoff-chip > span {
   flex: 1;
   min-width: 0;
+}
+
+.dayoff-chip + .dayoff-chip {
+  margin-top: 6px;
+}
+
+/* Shown to a teacher: information only. */
+.dayoff-chip:disabled {
+  cursor: default;
+  color: inherit;
 }
 
 /* Month cells by kind of day: tint + a small corner icon, legend below the grid. */

@@ -708,8 +708,14 @@
   border-top: 1px solid var(--border);
 }
 
-button.list-item:hover {
+button.list-item:hover:not(:disabled) {
   background: var(--surface-2);
+}
+
+/* Read-only rows (a teacher looking at groups) keep the normal look. */
+button.list-item:disabled {
+  cursor: default;
+  color: inherit;
 }
 
 button.list-item:active {

@@ -15,11 +15,13 @@ import {
   X,
 } from 'lucide-react';
 import { useState, type CSSProperties } from 'react';
+import { useAccess } from '../data/access';
 import { potLabel, useAccounts } from '../data/billing';
 import { CANCEL_REASONS, MOVE_REASONS, TRIAL_LEVELS, TRIAL_OUTCOMES, zoneLabel } from '../data/constants';
 import { chargeOf, isTrial, plannedOf } from '../data/money';
-import { lessonColor, lessonsByDay, lessonTitle } from '../data/selectors';
+import { lessonColor, lessonsByDay, lessonTitle, useManyTeachers } from '../data/selectors';
 import { useData } from '../data/store';
+import { teacherById, teacherOf } from '../data/teachers';
 import type { Initiator, Lesson } from '../data/types';
 import { dayKey, endStamp, longDay, minutesOf, shortDay, timeInZone, timeOf, todayKey, zoneDiffers } from '../lib/dates';
 import { money } from '../lib/format';
@@ -33,7 +35,7 @@ type Step = 'main' | 'move' | 'cancel' | 'edit';
 
 const INITIATORS: { value: Initiator; label: string }[] = [
   { value: 'student', label: 'Учень / батьки' },
-  { value: 'teacher', label: 'Я' },
+  { value: 'teacher', label: 'Вчителька' },
 ];
 
 export function LessonSheet({ id, onClose }: { id: string; onClose: () => void }) {
@@ -87,7 +89,10 @@ function MainStep({ lesson, onStep, onClose }: { lesson: Lesson; onStep: (s: Ste
   const updateParticipant = useData((s) => s.updateParticipant);
   const deleteLesson = useData((s) => s.deleteLesson);
   const putLesson = useData((s) => s.putLesson);
+  const teachers = useData((s) => s.teachers);
   const notify = useUi((s) => s.notify);
+  const access = useAccess();
+  const many = useManyTeachers() && access.role !== 'teacher';
   const now = useNow();
   const isGroup = !!lesson.groupId || lesson.participants.length > 1;
   const trial = isTrial(lesson);
@@ -129,6 +134,7 @@ function MainStep({ lesson, onStep, onClose }: { lesson: Lesson; onStep: (s: Ste
           </span>
         )}
         {lesson.groupId && groups[lesson.groupId] && <span className="badge">Групове заняття</span>}
+        {many && <span className="badge">Веде {teacherById(teachers, teacherOf(lesson)).name}</span>}
         {tz && (
           <span className="badge">
             <Clock size={13} /> в учня {timeInZone(lesson.start, tz)} · {zoneLabel(tz)}
@@ -137,39 +143,52 @@ function MainStep({ lesson, onStep, onClose }: { lesson: Lesson; onStep: (s: Ste
       </div>
 
       {lesson.status === 'planned' && (
-        <div className="ls-actions">
+        <div className="ls-actions" data-single={access.manage ? undefined : ''}>
           <button className="ls-action done" onClick={() => withUndo('Урок проведено', () => markDone(lesson.id))}>
             <Check size={22} strokeWidth={2.6} />
             Проведено
           </button>
-          <button className="ls-action move" onClick={() => onStep('move')}>
-            <CornerUpRight size={22} strokeWidth={2.4} />
-            Перенести
-          </button>
-          <button className="ls-action cancel" onClick={() => onStep('cancel')}>
-            <X size={22} strokeWidth={2.6} />
-            Скасувати
-          </button>
+          {access.manage && (
+            <>
+              <button className="ls-action move" onClick={() => onStep('move')}>
+                <CornerUpRight size={22} strokeWidth={2.4} />
+                Перенести
+              </button>
+              <button className="ls-action cancel" onClick={() => onStep('cancel')}>
+                <X size={22} strokeWidth={2.6} />
+                Скасувати
+              </button>
+            </>
+          )}
         </div>
+      )}
+      {lesson.status === 'planned' && !access.manage && (
+        <p className="field-hint" style={{ marginTop: 8 }}>
+          Перенести чи скасувати урок може адміністратор або менеджер.
+        </p>
       )}
 
       {lesson.status === 'cancelled' && lesson.cancel && (
         <div className="ls-info bad">
           <div>
-            <strong>Скасовано {lesson.cancel.by === 'teacher' ? 'мною' : 'учнем'}</strong>
+            <strong>Скасовано {lesson.cancel.by === 'teacher' ? 'вчителькою' : 'учнем'}</strong>
             {lesson.cancel.reason && ` · ${lesson.cancel.reason}`}
-            <div className="muted" style={{ fontSize: 13 }}>
-              {lesson.cancel.charged ? 'Оплачується (пізнє скасування)' : 'Не оплачується'}
+            {access.prices && (
+              <div className="muted" style={{ fontSize: 13 }}>
+                {lesson.cancel.charged ? 'Оплачується (пізнє скасування)' : 'Не оплачується'}
+              </div>
+            )}
+          </div>
+          {access.manage && (
+            <div className="row" style={{ marginTop: 12 }}>
+              <button className="btn btn-sm btn-ghost" onClick={() => withUndo('Урок відновлено', () => reopen(lesson.id))}>
+                <RotateCcw size={16} /> Відновити
+              </button>
+              <button className="btn btn-sm btn-soft" onClick={() => onStep('move')}>
+                <CornerUpRight size={16} /> Перенести на інший час
+              </button>
             </div>
-          </div>
-          <div className="row" style={{ marginTop: 12 }}>
-            <button className="btn btn-sm btn-ghost" onClick={() => withUndo('Урок відновлено', () => reopen(lesson.id))}>
-              <RotateCcw size={16} /> Відновити
-            </button>
-            <button className="btn btn-sm btn-soft" onClick={() => onStep('move')}>
-              <CornerUpRight size={16} /> Перенести на інший час
-            </button>
-          </div>
+          )}
         </div>
       )}
 
@@ -210,11 +229,15 @@ function MainStep({ lesson, onStep, onClose }: { lesson: Lesson; onStep: (s: Ste
       )}
 
       {trial ? (
-        <div className="ls-free">
-          <Gift size={18} /> Пробний урок безкоштовний — у доходи й оплати не рахується
-        </div>
-      ) : (
+        access.prices && (
+          <div className="ls-free">
+            <Gift size={18} /> Пробний урок безкоштовний — у доходи й оплати не рахується
+          </div>
+        )
+      ) : access.prices ? (
         <PaymentSection lesson={lesson} isGroup={isGroup} onOpenStudent={openStudent} />
+      ) : (
+        isGroup && <Participants lesson={lesson} onOpenStudent={openStudent} />
       )}
 
       {lesson.moves.length > 0 && (
@@ -231,7 +254,7 @@ function MainStep({ lesson, onStep, onClose }: { lesson: Lesson; onStep: (s: Ste
                     {shortDay(m.from)} {timeOf(m.from)} → {shortDay(m.to)} {timeOf(m.to)}
                   </div>
                   <div className="list-sub">
-                    {m.by === 'teacher' ? 'з моєї ініціативи' : 'попросив учень / батьки'}
+                    {m.by === 'teacher' ? 'з ініціативи вчительки' : 'попросив учень / батьки'}
                     {m.reason && ` · ${m.reason}`}
                   </div>
                 </div>
@@ -246,25 +269,64 @@ function MainStep({ lesson, onStep, onClose }: { lesson: Lesson; onStep: (s: Ste
           <Avatar name={first.name} color={first.color} size={34} />
           <div className="list-main">
             <div className="list-title">Сторінка учня</div>
-            <div className="list-sub">Історія тем, прогрес, оплати</div>
+            <div className="list-sub">{access.prices ? 'Історія тем, прогрес, оплати' : 'Історія тем, прогрес, контакти'}</div>
           </div>
           <ChevronRight size={20} className="faint" />
         </button>
       )}
 
-      <div className="row" style={{ marginTop: 20 }}>
-        <button className="btn btn-ghost" onClick={() => onStep('edit')}>
-          <Pencil size={17} /> Змінити
-        </button>
-        <button className="btn btn-danger-soft" onClick={remove}>
-          <Trash2 size={17} /> Видалити
-        </button>
-      </div>
+      {access.manage && (
+        <div className="row" style={{ marginTop: 20 }}>
+          <button className="btn btn-ghost" onClick={() => onStep('edit')}>
+            <Pencil size={17} /> Змінити
+          </button>
+          <button className="btn btn-danger-soft" onClick={remove}>
+            <Trash2 size={17} /> Видалити
+          </button>
+        </div>
+      )}
     </div>
   );
 }
 
 const isSingle = (l: Lesson) => !l.groupId && l.participants.length === 1;
+
+/* ---------- Participants of a group lesson, without money (teacher) ---------- */
+
+function Participants({ lesson, onOpenStudent }: { lesson: Lesson; onOpenStudent: (id: string) => void }) {
+  const students = useData((s) => s.students);
+  const updateParticipant = useData((s) => s.updateParticipant);
+  return (
+    <>
+      <div className="section-title" style={{ marginTop: 22 }}>
+        <h3>Учасники</h3>
+      </div>
+      <div className="list">
+        {lesson.participants.map((p) => {
+          const st = students[p.studentId];
+          return (
+            <div key={p.studentId} className="list-item pay-item">
+              {st && (
+                <button onClick={() => onOpenStudent(st.id)} style={{ display: 'contents' }}>
+                  <Avatar name={st.name} color={st.color} size={34} />
+                </button>
+              )}
+              <div className="list-main">
+                <div className="list-title">{st?.name ?? '—'}</div>
+              </div>
+              <div className="group-extra">
+                <GradePicker value={p.grade} onChange={(g) => updateParticipant(lesson.id, p.studentId, { grade: g })} />
+                <button className="chip sm" aria-pressed={!!p.absent} onClick={() => updateParticipant(lesson.id, p.studentId, { absent: !p.absent })}>
+                  {p.absent ? 'Не було на уроці' : 'Відмітити відсутність'}
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}
 
 /* ---------- Payment ---------- */
 
@@ -359,6 +421,7 @@ function TrialFields({ lesson }: { lesson: Lesson }) {
   const setStudentStatus = useData((s) => s.setStudentStatus);
   const open = useUi((s) => s.open);
   const notify = useUi((s) => s.notify);
+  const manage = useAccess().manage;
   const r = lesson.trial ?? { level: '', strengths: '', weaknesses: '', plan: '' };
   const st = students[lesson.participants[0]?.studentId];
 
@@ -402,7 +465,7 @@ function TrialFields({ lesson }: { lesson: Lesson }) {
         </div>
       </div>
 
-      {st && st.status === 'trial' && r.outcome === 'continue' && (
+      {manage && st && st.status === 'trial' && r.outcome === 'continue' && (
         <div className="banner" style={{ marginTop: 14 }}>
           <UserCheck size={20} />
           <span style={{ flex: 1 }}>Вкажіть ціну та постійний розклад — і уроки з'являться в календарі.</span>
@@ -417,7 +480,7 @@ function TrialFields({ lesson }: { lesson: Lesson }) {
           </button>
         </div>
       )}
-      {st && st.status === 'trial' && r.outcome === 'declined' && (
+      {manage && st && st.status === 'trial' && r.outcome === 'declined' && (
         <div className="banner warn" style={{ marginTop: 14 }}>
           <span style={{ flex: 1 }}>{st.name} не продовжує — можна прибрати з учнів в архів.</span>
           <button
@@ -457,7 +520,10 @@ function MoveStep({ lesson, onDone }: { lesson: Lesson; onDone: () => void }) {
     { label: 'Через тиждень', day: dayKey(addWeeks(base, 1)) },
   ];
 
-  const sameDay = (lessonsByDay(rec).get(day) ?? []).filter((l) => l.id !== lesson.id && l.status !== 'cancelled');
+  // Only the same teacher's lessons can clash; other teachers teach at the same time all the time.
+  const sameDay = (lessonsByDay(rec).get(day) ?? []).filter(
+    (l) => l.id !== lesson.id && l.status !== 'cancelled' && teacherOf(l) === teacherOf(lesson),
+  );
   const s = minutesOf(`${day}T${time}`);
   const clash = sameDay.filter((l) => {
     const ls = minutesOf(l.start);

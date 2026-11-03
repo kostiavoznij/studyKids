@@ -28,14 +28,28 @@ import {
   Wallet,
 } from 'lucide-react';
 import { useEffect, useRef, useState, type CSSProperties, type MouseEvent, type Ref } from 'react';
+import { useAccess } from '../data/access';
 import { accountLabel, needsPayment, useAccounts, type Account } from '../data/billing';
 import { isTrial, lessonValue } from '../data/money';
 import { dayOffLabel } from '../data/constants';
-import { dayOffOn, lessonColor, lessonsByDay, lessonTitle, liveLessons, useDaysOff, useMissingTaxes } from '../data/selectors';
+import {
+  dayOffOn,
+  lessonColor,
+  lessonsByDay,
+  lessonTitle,
+  liveLessons,
+  useCalendarDaysOff,
+  useCalendarLessons,
+  useCalendarTeacher,
+  useDaysOff,
+  useManyTeachers,
+  useMissingTaxes,
+} from '../data/selectors';
 import { summarize } from '../data/stats';
 import { useData } from '../data/store';
 import { dueText } from '../data/taxes';
-import type { CalendarView, DayOff, Lesson, Student } from '../data/types';
+import { teacherById, teacherOf } from '../data/teachers';
+import { ALL_TEACHERS, type CalendarView, type DayOff, type Lesson, type Student } from '../data/types';
 import {
   cap,
   dayKey,
@@ -55,6 +69,7 @@ import { Avatar, Money, Segmented, Tile, useNow, useSwipe } from '../ui/componen
 import { navigate } from '../ui/router';
 import { useUi } from '../ui/uiStore';
 import { DAY_OFF_ICONS } from './DayOffSheet';
+import { TeacherFilter } from '../ui/TeacherFilter';
 import { SyncBadge } from './SyncSection';
 
 const VIEWS: { value: CalendarView; label: string }[] = [
@@ -69,7 +84,9 @@ const hhmm = (min: number) => `${pad(Math.floor(min / 60))}:${pad(min % 60)}`;
 export function CalendarScreen() {
   const view = useData((s) => s.settings.calendarView);
   const updateSettings = useData((s) => s.updateSettings);
-  const rec = useData((s) => s.lessons);
+  const rec = useCalendarLessons();
+  const teacher = useCalendarTeacher();
+  const access = useAccess();
   const selected = useUi((s) => s.day) ?? todayKey();
   const setDay = useUi((s) => s.setDay);
   const open = useUi((s) => s.open);
@@ -93,7 +110,7 @@ export function CalendarScreen() {
     }
     if (selected === today) start = Math.max(start, Math.ceil((minutesOf(now) + 1) / 60) * 60);
     start = Math.min(start, 23 * 60);
-    open({ kind: 'newLesson', start: `${selected}T${hhmm(start)}` });
+    open({ kind: 'newLesson', start: `${selected}T${hhmm(start)}`, teacherId: teacher ?? undefined });
   };
 
   const isCurrent =
@@ -128,6 +145,7 @@ export function CalendarScreen() {
           <div className="cal-controls">
             <Segmented label="Вигляд календаря" value={view} options={VIEWS} onChange={setView} />
           </div>
+          <TeacherFilter />
           {view === 'day' && <WeekStrip selected={selected} today={today} byDay={byDay} onPick={setDay} />}
         </div>
 
@@ -135,9 +153,11 @@ export function CalendarScreen() {
         {view === 'week' && <WeekView key={dayKey(startOfWeek(date, WEEK_OPTS))} date={date} byDay={byDay} now={now} />}
         {view === 'month' && <MonthView key={selected.slice(0, 7)} date={date} byDay={byDay} now={now} />}
       </div>
-      <button className="fab" onClick={addLesson} aria-label="Новий урок">
-        <Plus size={28} strokeWidth={2.4} />
-      </button>
+      {access.manage && (
+        <button className="fab" onClick={addLesson} aria-label="Новий урок">
+          <Plus size={28} strokeWidth={2.4} />
+        </button>
+      )}
     </div>
   );
 }
@@ -158,7 +178,7 @@ function WeekStrip({
   const students = useData((s) => s.students);
   const groups = useData((s) => s.groups);
   const workDays = useData((s) => s.settings.workDays);
-  const daysOff = useDaysOff();
+  const daysOff = useCalendarDaysOff();
   const start = startOfWeek(parseISO(selected), WEEK_OPTS);
   const days = Array.from({ length: 7 }, (_, i) => addDays(start, i));
   const swipe = useSwipe((dir) => onPick(dayKey(addDays(parseISO(selected), dir * 7))));
@@ -198,18 +218,27 @@ function WeekStrip({
 /* ---------- Day ---------- */
 
 function DayView({ day, byDay, now }: { day: string; byDay: Map<string, Lesson[]>; now: string }) {
-  const rec = useData((s) => s.lessons);
+  const rec = useCalendarLessons();
+  const access = useAccess();
+  const teacher = useCalendarTeacher();
+  const many = useManyTeachers() && access.role !== 'teacher';
+  const teachers = useData((s) => s.teachers);
+  const allDaysOff = useDaysOff();
   const markManyDone = useData((s) => s.markManyDone);
   const putLesson = useData((s) => s.putLesson);
   const setDay = useUi((s) => s.setDay);
   const notify = useUi((s) => s.notify);
   const open = useUi((s) => s.open);
   const workDays = useData((s) => s.settings.workDays);
-  const daysOff = useDaysOff();
+  const daysOff = useCalendarDaysOff();
   const lessons = byDay.get(day) ?? [];
   const sum = summarize(lessons, null, now);
   const activeCount = sum.done + sum.planned;
   const off = dayOffOn(daysOff, day);
+  // For the whole school, each teacher's own days off show as well, with her name.
+  const showAll = many && teacher === null;
+  const chips = showAll ? allDaysOff.filter((d) => d.from <= day && day <= d.to) : off ? [off] : [];
+  const whose = (d: DayOff) => (!showAll ? undefined : d.teacherId === ALL_TEACHERS ? 'для всіх' : teacherById(teachers, teacherOf(d)).name);
   const workday = workDays.includes(isoWeekday(parseISO(day)));
   const today = now.slice(0, 10);
   const swipe = useSwipe((dir) => setDay(dayKey(addDays(parseISO(day), dir))));
@@ -241,8 +270,8 @@ function DayView({ day, byDay, now }: { day: string; byDay: Map<string, Lesson[]
         </div>
       )}
 
-      {day === today && <PaymentReminders />}
-      {day === today && <TaxReminder />}
+      {day === today && access.prices && access.manage && teacher === null && <PaymentReminders />}
+      {day === today && access.finance && <TaxReminder />}
 
       <div className="card day-summary">
         <div className="ds-top">
@@ -256,7 +285,7 @@ function DayView({ day, byDay, now }: { day: string; byDay: Map<string, Lesson[]
               {sum.trials > 0 && <span className="ds-trial">{activeCount ? ' + ' : ''}{nPlural(sum.trials, TRIALS)}</span>}
             </div>
           </div>
-          {sum.earned + sum.expected > 0 && (
+          {access.finance && sum.earned + sum.expected > 0 && (
             <div className="ds-money">
               <div className="big">
                 <Money value={sum.earned + sum.expected} />
@@ -283,10 +312,11 @@ function DayView({ day, byDay, now }: { day: string; byDay: Map<string, Lesson[]
             </div>
           </>
         )}
-        {off ? (
-          <DayOffChip off={off} onEdit={() => open({ kind: 'dayOff', id: off.id })} />
-        ) : (
-          <button className="ds-mark" onClick={() => open({ kind: 'dayOff', day })}>
+        {chips.map((d) => (
+          <DayOffChip key={d.id} off={d} who={whose(d)} onEdit={access.manage ? () => open({ kind: 'dayOff', id: d.id }) : undefined} />
+        ))}
+        {!off && access.manage && (
+          <button className="ds-mark" onClick={() => open({ kind: 'dayOff', day, teacherId: teacher ?? undefined })}>
             <CalendarOff size={15} />
             {activeCount === 0 && workday ? 'Чому немає уроків? Позначити день' : 'Позначити день: відпустка, лікарняний…'}
           </button>
@@ -361,18 +391,19 @@ function MonthLegend({ kinds }: { kinds: Set<DayKind> }) {
   );
 }
 
-function DayOffChip({ off, onEdit }: { off: DayOff; onEdit: () => void }) {
+function DayOffChip({ off, who, onEdit }: { off: DayOff; who?: string; onEdit?: () => void }) {
   const Icon = DAY_OFF_ICONS[off.kind];
   const range = off.from === off.to ? '' : ` · ${fmt(off.from, 'd MMM')} – ${fmt(off.to, 'd MMM')}`;
   return (
-    <button className="dayoff-chip" onClick={onEdit}>
+    <button className="dayoff-chip" onClick={onEdit} disabled={!onEdit}>
       <Icon size={18} />
       <span>
         <b>{dayOffLabel(off.kind)}</b>
+        {who && ` · ${who}`}
         {range}
         {off.note && <span className="faint"> · {off.note}</span>}
       </span>
-      <Pencil size={14} className="faint" />
+      {onEdit && <Pencil size={14} className="faint" />}
     </button>
   );
 }
@@ -493,6 +524,8 @@ function hourBounds(lessons: Lesson[], dayStart: number, dayEnd: number, nowMin?
 function Timeline({ day, lessons, now }: { day: string; lessons: Lesson[]; now: string }) {
   const { dayStart, dayEnd } = useData((s) => s.settings);
   const open = useUi((s) => s.open);
+  const manage = useAccess().manage;
+  const teacher = useCalendarTeacher();
   const target = useRef<HTMLElement | null>(null);
   const setTarget = (el: HTMLElement | null) => {
     target.current = el;
@@ -512,10 +545,10 @@ function Timeline({ day, lessons, now }: { day: string; lessons: Lesson[]; now: 
 
   const onEmptyClick = (e: MouseEvent<HTMLDivElement>) => {
     const el = e.target as HTMLElement;
-    if (el !== e.currentTarget && !el.classList.contains('tl-hour')) return;
+    if (!manage || (el !== e.currentTarget && !el.classList.contains('tl-hour'))) return;
     const y = e.clientY - e.currentTarget.getBoundingClientRect().top;
     const min = Math.min(23 * 60 + 30, Math.max(0, Math.round((startH * 60 + (y / HOUR) * 60) / 30) * 30));
-    open({ kind: 'newLesson', start: `${day}T${hhmm(min)}` });
+    open({ kind: 'newLesson', start: `${day}T${hhmm(min)}`, teacherId: teacher ?? undefined });
   };
 
   return (
@@ -567,7 +600,11 @@ function LessonBlock({
 }) {
   const students = useData((s) => s.students);
   const groups = useData((s) => s.groups);
+  const teachers = useData((s) => s.teachers);
   const open = useUi((s) => s.open);
+  const access = useAccess();
+  const teacher = useCalendarTeacher();
+  const many = useManyTeachers() && access.role !== 'teacher';
   const accounts = useAccounts();
   const title = lessonTitle(lesson, students, groups);
   const trial = isTrial(lesson);
@@ -582,7 +619,9 @@ function LessonBlock({
       : trial
         ? 'пробний урок'
         : lesson.topic || subject;
-  const unpaid = !trial && status !== 'cancelled' && isUnpaid(lesson, students, accounts);
+  // Looking at the whole school, each lesson says whose it is.
+  const who = many && teacher === null ? teacherById(teachers, teacherOf(lesson)).name : '';
+  const unpaid = access.prices && !trial && status !== 'cancelled' && isUnpaid(lesson, students, accounts);
   const height = typeof style.height === 'number' ? style.height : 60;
   // Two lines need ~58px with normal padding (~44 in the narrow week grid); a 45-minute
   // lesson gets a tighter two-line layout, and anything shorter goes on a single line.
@@ -622,7 +661,7 @@ function LessonBlock({
       <span className="lb-row">
         {lesson.groupId && !bare && <Users size={narrow ? 11 : 14} strokeWidth={2.4} style={{ flex: 'none' }} />}
         <span className="lb-name">{title}</span>
-        {!narrow && !compactRow && value > 0 && status !== 'cancelled' && (
+        {access.finance && !narrow && !compactRow && value > 0 && status !== 'cancelled' && (
           <span className="lb-price">{money(value)}</span>
         )}
         {unpaid && (
@@ -638,6 +677,7 @@ function LessonBlock({
       ) : (
         <span className="lb-meta">
           {narrow ? timeOf(lesson.start) : time}
+          {!narrow && who ? ` · ${who}` : ''}
           {!narrow && detail ? ` · ${detail}` : ''}
         </span>
       )}
@@ -668,6 +708,8 @@ function WeekView({ date, byDay, now }: { date: Date; byDay: Map<string, Lesson[
   const updateSettings = useData((s) => s.updateSettings);
   const setDay = useUi((s) => s.setDay);
   const open = useUi((s) => s.open);
+  const access = useAccess();
+  const teacher = useCalendarTeacher();
   const start = startOfWeek(date, WEEK_OPTS);
   const days = Array.from({ length: 7 }, (_, i) => addDays(start, i));
   const all = days.flatMap((d) => byDay.get(dayKey(d)) ?? []);
@@ -689,8 +731,8 @@ function WeekView({ date, byDay, now }: { date: Date; byDay: Map<string, Lesson[
       <SummaryCard
         title={`Тиждень ${fmt(start, 'd MMM')} – ${fmt(addDays(start, 6), 'd MMM')}`}
         count={sum.done + sum.planned}
-        earned={sum.earned}
-        expected={sum.expected}
+        earned={access.finance ? sum.earned : 0}
+        expected={access.finance ? sum.expected : 0}
         cancelled={sum.cancelled}
         moved={sum.moved}
       />
@@ -703,7 +745,7 @@ function WeekView({ date, byDay, now }: { date: Date; byDay: Map<string, Lesson[
             <button key={k} className="wk-head" data-today={k === today ? '' : undefined} onClick={() => openDay(k)}>
               <span className="ws-wd">{weekdayShort(isoWeekday(d))}</span>
               <span className="ws-num">{d.getDate()}</span>
-              <span className="sum">{v > 0 ? tiny(v) : '·'}</span>
+              <span className="sum">{access.finance && v > 0 ? tiny(v) : '·'}</span>
             </button>
           );
         })}
@@ -723,10 +765,10 @@ function WeekView({ date, byDay, now }: { date: Date; byDay: Map<string, Lesson[
               data-today={k === today ? '' : undefined}
               style={{ height }}
               onClick={(e) => {
-                if (e.target !== e.currentTarget) return;
+                if (!access.manage || e.target !== e.currentTarget) return;
                 const y = e.clientY - e.currentTarget.getBoundingClientRect().top;
                 const min = Math.round((startH * 60 + (y / WHOUR) * 60) / 30) * 30;
-                open({ kind: 'newLesson', start: `${k}T${hhmm(Math.min(min, 23 * 60 + 30))}` });
+                open({ kind: 'newLesson', start: `${k}T${hhmm(Math.min(min, 23 * 60 + 30))}`, teacherId: teacher ?? undefined });
               }}
             >
               {Array.from({ length: endH - startH }, (_, i) => (
@@ -803,11 +845,12 @@ function SummaryCard({
 function MonthView({ date, byDay, now }: { date: Date; byDay: Map<string, Lesson[]>; now: string }) {
   const students = useData((s) => s.students);
   const groups = useData((s) => s.groups);
-  const rec = useData((s) => s.lessons);
+  const rec = useCalendarLessons();
+  const finance = useAccess().finance;
   const updateSettings = useData((s) => s.updateSettings);
   const setDay = useUi((s) => s.setDay);
   const workDays = useData((s) => s.settings.workDays);
-  const daysOff = useDaysOff();
+  const daysOff = useCalendarDaysOff();
   const offOf = (k: string) => dayOffOn(daysOff, k);
   const ms = startOfMonth(date);
   const me = endOfMonth(date);
@@ -856,7 +899,7 @@ function MonthView({ date, byDay, now }: { date: Date; byDay: Map<string, Lesson
                   />
                 ))}
               </span>
-              {v > 0 && <span className="mg-sum">{tiny(v)}</span>}
+              {finance && v > 0 && <span className="mg-sum">{tiny(v)}</span>}
             </button>
           );
         })}
@@ -865,11 +908,15 @@ function MonthView({ date, byDay, now }: { date: Date; byDay: Map<string, Lesson
 
       <div className="tiles four" style={{ marginTop: 16 }}>
         <Tile label="Уроків" value={sum.done + sum.planned} sub={`проведено ${sum.done}${sum.trials ? ` · пробних ${sum.trials}` : ''}`} />
-        <Tile label="Дохід" value={<Money value={sum.earned + sum.expected} />} sub={`зароблено ${money(sum.earned)}`} />
+        {finance ? (
+          <Tile label="Дохід" value={<Money value={sum.earned + sum.expected} />} sub={`зароблено ${money(sum.earned)}`} />
+        ) : (
+          <Tile label="Пробні уроки" value={sum.trials} sub={sum.trialsDone ? `проведено ${sum.trialsDone}` : 'знайомство з новими учнями'} />
+        )}
         <Tile
           label="Скасовано"
           value={sum.cancelled}
-          sub={sum.cancelled ? `учнями ${sum.cancelledByStudent} · мною ${sum.cancelledByTeacher}` : 'без скасувань'}
+          sub={sum.cancelled ? `учнями ${sum.cancelledByStudent} · вчителькою ${sum.cancelledByTeacher}` : 'без скасувань'}
         />
         <Tile label="Перенесено" value={sum.moved} sub={sum.moved ? 'на інший день чи час' : 'без перенесень'} />
       </div>

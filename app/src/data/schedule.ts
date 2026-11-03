@@ -2,6 +2,7 @@ import { addDays, addWeeks } from 'date-fns';
 import { dayKey, isoWeekday, todayKey } from '../lib/dates';
 import { uid } from '../lib/format';
 import { dayOffLabel } from './constants';
+import { dayOffApplies, teacherOf } from './teachers';
 import type { DayOff, Group, ID, Lesson, Participant, Slot, Student } from './types';
 
 export const studentSlotKey = (studentId: string, slotId: string, day: string) => `s:${studentId}:${slotId}:${day}`;
@@ -59,11 +60,11 @@ export function missingScheduled(
   horizonWeeks: number,
   daysOff: DayOff[] = [],
 ): Lesson[] {
-  // Days marked as vacation/sick leave get their lessons already cancelled.
+  // Days marked as vacation/sick leave get their lessons already cancelled — only that teacher's, unless the mark is for everyone.
   const offRanges = daysOff.filter((d) => !d.deletedAt && d.cancelLessons);
-  const offFor = (day: string) => offRanges.find((d) => d.from <= day && day <= d.to);
+  const offFor = (day: string, teacherId: string) => offRanges.find((d) => d.from <= day && day <= d.to && dayOffApplies(d, teacherId));
   const cancelIfOff = (l: Lesson) => {
-    const off = offFor(l.start.slice(0, 10));
+    const off = offFor(l.start.slice(0, 10), teacherOf(l));
     if (off) {
       l.status = 'cancelled';
       l.cancel = { by: 'teacher', reason: dayOffLabel(off.kind), charged: false, at: 1 };
@@ -87,7 +88,9 @@ export function missingScheduled(
         if (day < s.startDate || day < today) continue;
         const key = studentSlotKey(s.id, slot.id, day);
         if (taken.has(key)) continue;
-        out.push(cancelIfOff(generated(key, `${day}T${slot.time}`, slot.duration, [{ studentId: s.id, price: s.price }])));
+        const l = generated(key, `${day}T${slot.time}`, slot.duration, [{ studentId: s.id, price: s.price }]);
+        if (s.teacherId) l.teacherId = s.teacherId;
+        out.push(cancelIfOff(l));
       }
     }
   }
@@ -105,6 +108,7 @@ export function missingScheduled(
           g.studentIds.map((id) => ({ studentId: id, price: g.price })),
         );
         l.groupId = g.id;
+        if (g.teacherId) l.teacherId = g.teacherId;
         out.push(cancelIfOff(l));
       }
     }

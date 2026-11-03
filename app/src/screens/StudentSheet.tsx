@@ -1,12 +1,14 @@
 import { Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { SUBJECTS, TIMEZONES } from '../data/constants';
-import { useLivePayments, useLiveStudents } from '../data/selectors';
+import { useAccess } from '../data/access';
+import { useActiveTeachers, useLivePayments, useLiveStudents } from '../data/selectors';
 import { useData } from '../data/store';
-import type { Billing, Contact, Slot, StudentStatus } from '../data/types';
+import { teacherOf } from '../data/teachers';
+import { MAIN_TEACHER, type Billing, type Contact, type ID, type Slot, type StudentStatus } from '../data/types';
 import { money, nPlural, PAYMENTS } from '../lib/format';
 import { Segmented, Sheet } from '../ui/components';
-import { BillingPicker, ColorPicker, DurationChips, PriceField, SlotEditor, StudentChips } from '../ui/fields';
+import { BillingPicker, ColorPicker, DurationChips, PriceField, SlotEditor, StudentChips, TeacherChips } from '../ui/fields';
 import { navigate } from '../ui/router';
 import { ask, useUi } from '../ui/uiStore';
 
@@ -36,6 +38,10 @@ export function StudentSheet({ id, onClose }: { id?: string; onClose: () => void
   const [timezone, setTimezone] = useState(existing?.timezone ?? '');
   const [contact, setContact] = useState<Contact>(existing?.contact ?? {});
   const [status, setStatus] = useState<StudentStatus>(existing?.status ?? 'active');
+  const teachers = useActiveTeachers();
+  const teacherFilter = useUi((s) => s.teacher);
+  const [teacher, setTeacher] = useState<ID>(existing ? teacherOf(existing) : (teacherFilter ?? MAIN_TEACHER));
+  const destroy = useAccess().destroy;
 
   const setC = (k: keyof Contact, v: string) => setContact((c) => ({ ...c, [k]: v }));
 
@@ -54,6 +60,7 @@ export function StudentSheet({ id, onClose }: { id?: string; onClose: () => void
       timezone,
       contact,
       status,
+      teacherId: teacher === MAIN_TEACHER ? undefined : teacher,
     });
     notify(existing ? 'Збережено' : `${name.trim()} — додано`);
     onClose();
@@ -114,6 +121,16 @@ export function StudentSheet({ id, onClose }: { id?: string; onClose: () => void
         <span className="field-label">Клас або вік</span>
         <input className="input" value={grade} onChange={(e) => setGrade(e.target.value)} placeholder="Напр.: 3 клас" />
       </label>
+
+      {(teachers.length > 1 || !teachers.some((t) => t.id === teacher)) && (
+        <div className="field">
+          <span className="field-label">Вчителька</span>
+          <TeacherChips teachers={teachers} value={teacher} onChange={setTeacher} />
+          {existing && teacher !== teacherOf(existing) && (
+            <span className="field-hint">Заплановані уроки учня перейдуть до неї, а проведені лишаться за попередньою вчителькою.</span>
+          )}
+        </div>
+      )}
 
       <div className="form-section">
         <h3>Урок і оплата</h3>
@@ -179,10 +196,13 @@ export function StudentSheet({ id, onClose }: { id?: string; onClose: () => void
           <Segmented label="Статус" value={status} options={STATUSES} onChange={setStatus} />
           <p className="field-hint" style={{ marginTop: 8 }}>
             На паузі чи в архіві нові уроки не створюються, а історія зберігається.
+            {!destroy && ' Видалити учня назавжди може лише адміністратор.'}
           </p>
-          <button className="btn btn-danger-soft btn-block" style={{ marginTop: 18 }} onClick={remove}>
-            <Trash2 size={17} /> Видалити учня
-          </button>
+          {destroy && (
+            <button className="btn btn-danger-soft btn-block" style={{ marginTop: 18 }} onClick={remove}>
+              <Trash2 size={17} /> Видалити учня
+            </button>
+          )}
         </div>
       )}
     </Sheet>
@@ -211,6 +231,10 @@ export function GroupSheet({ id, onClose }: { id?: string; onClose: () => void }
   const [duration, setDuration] = useState(existing?.duration ?? settings.defaultDuration);
   const [schedule, setSchedule] = useState<Slot[]>(existing?.schedule ?? []);
   const [status, setStatus] = useState<StudentStatus>(existing?.status ?? 'active');
+  const teachers = useActiveTeachers();
+  const teacherFilter = useUi((s) => s.teacher);
+  const [teacher, setTeacher] = useState<ID>(existing ? teacherOf(existing) : (teacherFilter ?? MAIN_TEACHER));
+  const destroy = useAccess().destroy;
 
   const save = () => {
     if (!name.trim()) return;
@@ -223,6 +247,7 @@ export function GroupSheet({ id, onClose }: { id?: string; onClose: () => void }
       duration,
       schedule: schedule.map((s) => ({ ...s, duration })),
       status,
+      teacherId: teacher === MAIN_TEACHER ? undefined : teacher,
     });
     notify(existing ? 'Групу збережено' : 'Групу створено');
     onClose();
@@ -254,6 +279,15 @@ export function GroupSheet({ id, onClose }: { id?: string; onClose: () => void }
         <span className="field-label">Колір</span>
         <ColorPicker value={color} onChange={setColor} />
       </div>
+      {(teachers.length > 1 || !teachers.some((t) => t.id === teacher)) && (
+        <div className="field">
+          <span className="field-label">Вчителька</span>
+          <TeacherChips teachers={teachers} value={teacher} onChange={setTeacher} />
+          {existing && teacher !== teacherOf(existing) && (
+            <span className="field-hint">Заплановані заняття групи перейдуть до неї, а проведені лишаться за попередньою вчителькою.</span>
+          )}
+        </div>
+      )}
       <div className="field">
         <span className="field-label">Учасники · {ids.length}</span>
         <StudentChips students={students} selected={ids} onToggle={(sid) => setIds((xs) => (xs.includes(sid) ? xs.filter((x) => x !== sid) : [...xs, sid]))} />
@@ -274,9 +308,15 @@ export function GroupSheet({ id, onClose }: { id?: string; onClose: () => void }
         <div className="form-section">
           <h3>Статус</h3>
           <Segmented label="Статус" value={status} options={STATUSES} onChange={setStatus} />
-          <button className="btn btn-danger-soft btn-block" style={{ marginTop: 18 }} onClick={remove}>
-            <Trash2 size={17} /> Видалити групу
-          </button>
+          {destroy ? (
+            <button className="btn btn-danger-soft btn-block" style={{ marginTop: 18 }} onClick={remove}>
+              <Trash2 size={17} /> Видалити групу
+            </button>
+          ) : (
+            <p className="field-hint" style={{ marginTop: 8 }}>
+              Видалити групу назавжди може лише адміністратор.
+            </p>
+          )}
         </div>
       )}
     </Sheet>

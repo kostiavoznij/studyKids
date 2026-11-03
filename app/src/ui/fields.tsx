@@ -1,7 +1,7 @@
 import { Plus, Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { DURATIONS, STUDENT_COLORS } from '../data/constants';
-import type { Billing, ID, Slot, Student } from '../data/types';
+import type { Billing, ID, Slot, Student, Teacher } from '../data/types';
 import { WEEKDAYS_LONG, cap } from '../lib/dates';
 import { uid } from '../lib/format';
 import { Avatar } from './components';
@@ -215,6 +215,35 @@ export function SlotEditor({ slots, onChange, duration }: { slots: Slot[]; onCha
       >
         <Plus size={16} /> Додати день
       </button>
+    </div>
+  );
+}
+
+/** Pick one teacher; an option for everyone can be added (days off for the whole school). */
+export function TeacherChips({
+  teachers,
+  value,
+  onChange,
+  everyone,
+}: {
+  teachers: Teacher[];
+  value: ID;
+  onChange: (id: ID) => void;
+  everyone?: { id: ID; label: string };
+}) {
+  return (
+    <div className="student-chips" role="radiogroup" aria-label="Вчителька">
+      {teachers.map((t) => (
+        <button key={t.id} className="student-chip" role="radio" aria-checked={value === t.id} aria-pressed={value === t.id} onClick={() => onChange(t.id)}>
+          <Avatar name={t.name} color={t.color} size={26} />
+          {t.name}
+        </button>
+      ))}
+      {everyone && (
+        <button className="student-chip" role="radio" aria-checked={value === everyone.id} aria-pressed={value === everyone.id} onClick={() => onChange(everyone.id)}>
+          {everyone.label}
+        </button>
+      )}
     </div>
   );
 }

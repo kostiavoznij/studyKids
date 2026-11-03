@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { nowStamp, todayKey } from '../lib/dates';
 import { uid } from '../lib/format';
+import { currentRole } from './access';
 import { DEFAULT_SETTINGS, dayOffLabel } from './constants';
 import { buildDemo } from './demo';
 import { migrateV1 } from './migrate';
@@ -30,9 +31,11 @@ import type {
   StudentStatus,
   TaxPayment,
   TaxPlan,
+  Teacher,
   TrialReport,
 } from './types';
 import { TAX_PLAN_ID } from './taxes';
+import { dayOffApplies, teacherOf } from './teachers';
 
 export interface DataState {
   students: Record<ID, Student>;
@@ -45,6 +48,7 @@ export interface DataState {
   taxPlans: Record<ID, TaxPlan>;
   /** keyed by month 'yyyy-MM' */
   bankMonths: Record<ID, BankMonth>;
+  teachers: Record<ID, Teacher>;
   settings: Settings;
   seeded: 'demo' | 'clean' | null;
 }
@@ -55,6 +59,7 @@ export type PaymentInput = Partial<Payment> & { studentId: ID; amount: number };
 export type DayOffInput = Partial<DayOff> & Pick<DayOff, 'from' | 'to' | 'kind'>;
 export type TaxInput = Partial<TaxPayment> & Pick<TaxPayment, 'kind' | 'period' | 'date' | 'amount'>;
 export type BankInput = Pick<BankMonth, 'month' | 'amount' | 'note' | 'acceptedDiff'>;
+export type TeacherInput = Partial<Teacher> & { name: string };
 
 export interface NewLessonInput {
   start: string;
@@ -63,6 +68,7 @@ export interface NewLessonInput {
   groupId?: ID;
   topic?: string;
   kind?: LessonKind;
+  teacherId?: ID;
 }
 
 interface Actions {
@@ -97,6 +103,7 @@ interface Actions {
   saveTaxPlan(plan: Pick<TaxPlan, 'start' | 'rules'>): void;
   saveBankMonth(input: BankInput): void;
   deleteBankMonth(month: string): void;
+  saveTeacher(input: TeacherInput): ID;
   updateSettings(patch: Partial<Settings>): void;
   loadDemo(): void;
   clearAll(): void;
@@ -130,6 +137,18 @@ const ownedBySlot = (kind: 's' | 'g', ownerId: ID, slotIds?: Set<string>) => (l:
 
 const EMPTY_TRIAL: TrialReport = { level: '', strengths: '', weaknesses: '', plan: '' };
 
+/** Lessons still ahead go with the student (or group) to the new teacher; the past stays with whoever taught it. */
+function reassignFuture(lessons: Record<ID, Lesson>, match: (l: Lesson) => boolean, teacherId: ID): Record<ID, Lesson> {
+  const now = nowStamp();
+  let out = lessons;
+  for (const l of Object.values(lessons)) {
+    if (l.deletedAt || l.status !== 'planned' || l.start < now || !match(l) || teacherOf(l) === teacherId) continue;
+    if (out === lessons) out = { ...lessons };
+    out[l.id] = stamp({ ...l, teacherId });
+  }
+  return out;
+}
+
 export const useData = create<Store>()(
   persist(
     (set, get) => {
@@ -149,6 +168,7 @@ export const useData = create<Store>()(
         taxes: {},
         taxPlans: {},
         bankMonths: {},
+        teachers: {},
         settings: DEFAULT_SETTINGS,
         seeded: null,
 
@@ -158,6 +178,8 @@ export const useData = create<Store>()(
         },
 
         ensureSchedule() {
+          // A teacher's device only shows what the school planned; the weekly schedule isn't even on it.
+          if (currentRole() === 'teacher') return;
           const s = get();
           const list = Object.values(s.lessons);
           const orphans = orphanedScheduled(s.students, s.groups, list, nowStamp());
@@ -188,6 +210,9 @@ export const useData = create<Store>()(
             next.schedule = reissueChanged(next.schedule, changed);
             if (changed.size) lessons = dropFuture(lessons, ownedBySlot('s', prev.id, changed));
             if (next.status !== 'active') lessons = dropFuture(lessons, ownedBySlot('s', prev.id));
+            if (teacherOf(next) !== teacherOf(prev)) {
+              lessons = reassignFuture(lessons, (l) => !l.groupId && l.participants.some((p) => p.studentId === prev.id), teacherOf(next));
+            }
 
             // A new price applies to future lessons that still carry the old one.
             if (next.price !== prev.price) {
@@ -284,6 +309,7 @@ export const useData = create<Store>()(
               lessons = dropFuture(lessons, ownedBySlot('g', prev.id));
               next.schedule = next.schedule.map((sl) => ({ ...sl, id: uid() }));
             }
+            if (teacherOf(next) !== teacherOf(prev)) lessons = reassignFuture(lessons, (l) => l.groupId === prev.id, teacherOf(next));
           } else {
             const t = Date.now();
             next = {
@@ -315,6 +341,7 @@ export const useData = create<Store>()(
         createLesson(input) {
           const l = blankLesson(input.start, input.duration, input.participants);
           if (input.groupId) l.groupId = input.groupId;
+          if (input.teacherId) l.teacherId = input.teacherId;
           if (input.topic) l.topic = input.topic;
           if (input.kind === 'trial') {
             l.kind = 'trial';
@@ -412,7 +439,7 @@ export const useData = create<Store>()(
             lessons = { ...lessons };
             for (const l of Object.values(s.lessons)) {
               const day = l.start.slice(0, 10);
-              if (l.deletedAt || l.status !== 'planned' || day < next.from || day > next.to) continue;
+              if (l.deletedAt || l.status !== 'planned' || day < next.from || day > next.to || !dayOffApplies(next, teacherOf(l))) continue;
               lessons[l.id] = stamp({ ...l, status: 'cancelled', cancel: { by: 'teacher', reason, charged: false, at: t } });
             }
           }
@@ -429,7 +456,7 @@ export const useData = create<Store>()(
           const lessons = { ...s.lessons };
           for (const l of Object.values(s.lessons)) {
             const day = l.start.slice(0, 10);
-            if (l.deletedAt || l.status !== 'cancelled' || day < d.from || day > d.to || l.start < now) continue;
+            if (l.deletedAt || l.status !== 'cancelled' || day < d.from || day > d.to || l.start < now || !dayOffApplies(d, teacherOf(l))) continue;
             if (l.cancel?.by !== 'teacher' || l.cancel.reason !== reason) continue;
             lessons[l.id] = stamp({ ...l, status: 'planned', cancel: undefined });
           }
@@ -473,6 +500,18 @@ export const useData = create<Store>()(
           set((s) => ({ bankMonths: { ...s.bankMonths, [month]: stamp({ ...prev, deletedAt: Date.now() }) } }));
         },
 
+        saveTeacher(input) {
+          const s = get();
+          const prev = input.id ? s.teachers[input.id] : undefined;
+          const t = Date.now();
+          const next: Teacher = prev
+            ? stamp({ ...prev, ...input })
+            : { id: uid(), color: 'teal', email: '', status: 'active', createdAt: t, updatedAt: t, ...input };
+          next.email = next.email.trim().toLowerCase();
+          set({ teachers: { ...s.teachers, [next.id]: next } });
+          return next.id;
+        },
+
         updateSettings(patch) {
           const prevHorizon = get().settings.horizonWeeks;
           set((s) => ({ settings: { ...s.settings, ...patch } }));
@@ -480,18 +519,18 @@ export const useData = create<Store>()(
         },
 
         loadDemo() {
-          set({ taxPlans: {}, bankMonths: {}, ...buildDemo(), seeded: 'demo' });
+          set({ taxPlans: {}, bankMonths: {}, teachers: {}, ...buildDemo(), seeded: 'demo' });
           get().ensureSchedule();
         },
 
         clearAll() {
-          set({ students: {}, groups: {}, lessons: {}, payments: {}, daysOff: {}, taxes: {}, taxPlans: {}, bankMonths: {}, seeded: 'clean' });
+          set({ students: {}, groups: {}, lessons: {}, payments: {}, daysOff: {}, taxes: {}, taxPlans: {}, bankMonths: {}, teachers: {}, seeded: 'clean' });
         },
 
         exportData() {
-          const { students, groups, lessons, payments, daysOff, taxes, taxPlans, bankMonths, settings } = get();
+          const { students, groups, lessons, payments, daysOff, taxes, taxPlans, bankMonths, teachers, settings } = get();
           return JSON.stringify(
-            { app: 'uroky', version: 2, exportedAt: new Date().toISOString(), students, groups, lessons, payments, daysOff, taxes, taxPlans, bankMonths, settings },
+            { app: 'uroky', version: 2, exportedAt: new Date().toISOString(), students, groups, lessons, payments, daysOff, taxes, taxPlans, bankMonths, teachers, settings },
             null,
             1,
           );
@@ -511,6 +550,7 @@ export const useData = create<Store>()(
               taxes: d.taxes ?? {},
               taxPlans: d.taxPlans ?? {},
               bankMonths: d.bankMonths ?? {},
+              teachers: d.teachers ?? {},
               settings: { ...DEFAULT_SETTINGS, ...d.settings },
               seeded: 'clean',
             });
@@ -525,7 +565,7 @@ export const useData = create<Store>()(
     {
       name: 'uroky-data',
       version: 2,
-      partialize: ({ students, groups, lessons, payments, daysOff, taxes, taxPlans, bankMonths, settings, seeded }) => ({
+      partialize: ({ students, groups, lessons, payments, daysOff, taxes, taxPlans, bankMonths, teachers, settings, seeded }) => ({
         students,
         groups,
         lessons,
@@ -534,6 +574,7 @@ export const useData = create<Store>()(
         taxes,
         taxPlans,
         bankMonths,
+        teachers,
         settings,
         seeded,
       }),
@@ -559,6 +600,7 @@ export const useData = create<Store>()(
           taxes: p.taxes ?? {},
           taxPlans: p.taxPlans ?? {},
           bankMonths: p.bankMonths ?? {},
+          teachers: p.teachers ?? {},
           settings: { ...DEFAULT_SETTINGS, ...p.settings },
         };
       },

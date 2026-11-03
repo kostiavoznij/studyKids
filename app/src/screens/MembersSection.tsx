@@ -1,24 +1,28 @@
 import { KeyRound, RefreshCw, Trash2, UserPlus } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
-import { listMembers, removeMember, saveMember, useAccount, type Member, type Role } from '../data/cloud';
+import { listMembers, removeMember, saveMember, useAccount, type Member, type MemberRole } from '../data/cloud';
 import { fmt } from '../lib/dates';
 import { Avatar, Segmented } from '../ui/components';
 import { ask, useUi } from '../ui/uiStore';
 
 /*
- * Who may sign in (Налаштування → Доступ). The list lives on the server and
+ * Admins and managers (Налаштування → Доступ). The list lives on the server and
  * only an admin can change it; the server itself refuses anything else, and
- * never lets an admin lock themselves out.
+ * never lets an admin lock themselves out. Teachers are let in by their teacher
+ * card (Учні → Вчительки) instead.
  */
 
-const ROLES: { value: Role; label: string }[] = [
-  { value: 'teacher', label: 'Вчителька' },
+const ROLES: { value: MemberRole; label: string }[] = [
+  { value: 'manager', label: 'Менеджер' },
   { value: 'admin', label: 'Адміністратор' },
 ];
 
-const ROLE_HINT: Record<Role, string> = {
-  admin: 'Бачить і змінює все: учнів, уроки, гроші, статистику і цей список.',
-  teacher: 'Поки після входу бачить лише «кабінет у розробці». Згодом — свої уроки без грошей і статистики.',
+const ROLE_LABEL: Record<MemberRole, string> = { admin: 'Адміністратор', manager: 'Менеджер' };
+
+const ROLE_HINT: Record<MemberRole, string> = {
+  admin: 'Бачить і змінює все: учнів, уроки, гроші, фінанси, статистику і цей список.',
+  manager:
+    'Веде школу: учні, групи, уроки, перенесення й скасування, вчительки, оплати сімей. Не бачить фінансів, податків і заробітку, не видаляє учнів назавжди й не керує цим списком.',
 };
 
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -63,7 +67,8 @@ function Members({ me }: { me: string }) {
         <KeyRound size={20} /> Доступ
       </h2>
       <p className="muted" style={{ fontSize: 14, marginBottom: 12 }}>
-        Хто може входити в «Уроки» через Google. Будь-яка інша пошта після входу бачить лише «немає доступу».
+        Адміністратори й менеджери. Вчительок додають у «Учні → Вчительки»: там вказують їхній Gmail, і вони бачать лише свій розклад. Будь-яка інша пошта після
+        входу бачить лише «немає доступу».
       </p>
 
       {error && (
@@ -91,7 +96,7 @@ function Members({ me }: { me: string }) {
               <MemberForm key={m.email} member={m} me={me} taken={[]} onDone={done} onCancel={() => setOpen(null)} />
             ) : (
               <button key={m.email} className="list-item" onClick={() => setOpen(m.email)}>
-                <Avatar name={m.name || m.email} color={m.role === 'admin' ? 'violet' : 'teal'} size={38} />
+                <Avatar name={m.name || m.email} color={m.role === 'admin' ? 'violet' : 'blue'} size={38} />
                 <div className="list-main">
                   <div className="list-title">{m.name || m.email}</div>
                   <div className="list-sub">
@@ -99,7 +104,7 @@ function Members({ me }: { me: string }) {
                     {m.email === me ? 'це ви' : lastSeen(m)}
                   </div>
                 </div>
-                <span className={m.role === 'admin' ? 'badge accent' : 'badge'}>{m.role === 'admin' ? 'Адміністратор' : 'Вчителька'}</span>
+                <span className={m.role === 'admin' ? 'badge accent' : 'badge'}>{ROLE_LABEL[m.role]}</span>
               </button>
             ),
           )}
@@ -136,7 +141,7 @@ function MemberForm({
   const notify = useUi((s) => s.notify);
   const [email, setEmail] = useState(member?.email ?? '');
   const [name, setName] = useState(member?.name ?? '');
-  const [role, setRole] = useState<Role>(member?.role ?? 'teacher');
+  const [role, setRole] = useState<MemberRole>(member?.role ?? 'manager');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const self = member?.email === me;
@@ -158,7 +163,7 @@ function MemberForm({
     if (member?.role === 'admin' && role !== 'admin') {
       const yes = await ask({
         title: 'Зняти права адміністратора?',
-        text: `${who} більше не бачитиме учнів, гроші й статистику.`,
+        text: `${who} більше не бачитиме фінансів, податків і заробітку й не зможе керувати цим списком.`,
         ok: 'Зняти права',
         danger: true,
       });

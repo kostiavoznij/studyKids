@@ -1,6 +1,8 @@
 import { create } from 'zustand';
-import { cloud, useAccount } from './cloud';
+import { currentRole } from './access';
+import { cloud, useAccount, type Role } from './cloud';
 import { useData, type DataState } from './store';
+import { teacherOf } from './teachers';
 import type { ID } from './types';
 
 /*
@@ -18,10 +20,21 @@ import type { ID } from './types';
  * stay dirty on the device until the script is updated. Since the version that
  * added bankMonths the script stores any type (anyType), so new kinds of
  * records no longer need a script update.
+ *
+ * On the account every role syncs only what the server lets it have: a manager
+ * everything but the finance records, a teacher her own lessons (and the
+ * students in them) through teacher_pull()/teacher_push(), with the money taken
+ * out. When a device's role changes it starts over from an empty copy.
  */
 
-const TYPES = ['students', 'groups', 'lessons', 'payments', 'daysOff', 'taxes', 'taxPlans', 'bankMonths'] as const;
+const TYPES = ['students', 'groups', 'lessons', 'payments', 'daysOff', 'taxes', 'taxPlans', 'bankMonths', 'teachers'] as const;
 type RecType = (typeof TYPES)[number];
+/** What each role sends up; the server refuses the rest (supabase/migrations/20261104120000_roles.sql). */
+const PUSHED: Record<Role, readonly RecType[]> = {
+  admin: TYPES,
+  manager: ['students', 'groups', 'lessons', 'payments', 'daysOff', 'teachers'],
+  teacher: ['lessons'],
+};
 /** what every version of Code.gs stores */
 const BASE_TYPES: readonly RecType[] = ['students', 'groups', 'lessons', 'payments', 'daysOff'];
 type AnyRecord = { id: ID; updatedAt: number };
@@ -40,6 +53,8 @@ interface SyncConfig {
   types?: string[];
   /** the server stores records of any type */
   anyType?: boolean;
+  /** the role this copy was pulled for; missing — admin (devices from before there were roles) */
+  role?: Role;
 }
 
 const STORAGE = 'uroky-sync';
@@ -139,12 +154,26 @@ async function pushTo(cfg: SyncConfig, records: Records) {
     await call(cfg, 'push', { records });
     return;
   }
-  const { error } = await cloud().rpc('push_records', { records });
+  const { error } = await cloud().rpc(cfg.role === 'teacher' ? 'teacher_push' : 'push_records', { records });
   if (error) throw cloudError(error);
 }
 
-async function pullFrom(cfg: SyncConfig, since: number): Promise<{ rev: number; records: Records; types?: string[]; anyType?: boolean }> {
+interface Pulled {
+  rev: number;
+  records: Records;
+  types?: string[];
+  anyType?: boolean;
+  /** lessons that are no longer this teacher's */
+  gone?: { lessons?: ID[] };
+}
+
+async function pullFrom(cfg: SyncConfig, since: number): Promise<Pulled> {
   if (cfg.kind !== 'cloud') return call(cfg, 'pull', { since });
+  if (cfg.role === 'teacher') {
+    const { data, error } = await cloud().rpc('teacher_pull', { since });
+    if (error) throw cloudError(error);
+    return { ...(data as Pulled), anyType: true };
+  }
   const records: Records = {};
   let rev = since;
   for (;;) {
@@ -174,6 +203,40 @@ function dirtyRecords(s: DataState, confirmed: Record<string, number>, types: re
 }
 
 const countOf = (r: Records) => TYPES.reduce((n, t) => n + (r[t]?.length ?? 0), 0);
+
+/** Record types this device sends up: what the role may change (and, for the Google Sheet, what its script stores). */
+const pushedTypes = (cfg: SyncConfig) => (cfg.kind === 'cloud' ? PUSHED[cfg.role ?? 'admin'] : serverTypes(cfg));
+
+/**
+ * A teacher's copy keeps only what concerns her: lessons given to someone else
+ * go, and so do students and groups that are no longer in any of her lessons.
+ */
+function pruneForTeacher(gone: ID[], confirmed: Record<string, number>) {
+  useData.setState((s) => {
+    const lessons = { ...s.lessons };
+    for (const id of gone) {
+      delete lessons[id];
+      delete confirmed[`lessons:${id}`];
+    }
+    const mine = new Set(Object.keys(s.teachers));
+    const students = new Set<ID>();
+    const groups = new Set<ID>();
+    for (const l of Object.values(lessons)) {
+      if (l.deletedAt) continue;
+      for (const p of l.participants) students.add(p.studentId);
+      if (l.groupId) groups.add(l.groupId);
+    }
+    const keep = <T extends { id: ID; teacherId?: ID }>(rec: Record<ID, T>, used: Set<ID>, type: string) => {
+      const out: Record<ID, T> = {};
+      for (const x of Object.values(rec)) {
+        if (used.has(x.id) || mine.has(teacherOf(x))) out[x.id] = x;
+        else delete confirmed[`${type}:${x.id}`];
+      }
+      return out;
+    };
+    return { lessons, students: keep(s.students, students, 'students'), groups: keep(s.groups, groups, 'groups') };
+  });
+}
 
 function applyRemote(records: Records, confirmed: Record<string, number>) {
   useData.setState((s) => {
@@ -252,9 +315,15 @@ async function syncOnce() {
   if (cfg.kind === 'cloud') {
     const account = useAccount.getState();
     if (account.status === 'loading') return;
-    if (account.status !== 'in' || account.role !== 'admin') {
+    if (account.status !== 'in' || !account.role) {
       useSync.setState({ status: 'error', error: account.status === 'out' ? 'Увійдіть в акаунт' : 'Немає доступу до записів' });
       return;
+    }
+    // Another role sees other records: start over from what the server gives this one.
+    if ((cfg.role ?? 'admin') !== account.role) {
+      useData.getState().clearAll();
+      Object.assign(cfg, { lastRev: 0, confirmed: {}, role: account.role });
+      saveConfig(cfg);
     }
   }
   if (!navigator.onLine) {
@@ -264,13 +333,15 @@ async function syncOnce() {
   useSync.setState({ status: 'syncing', configured: true });
   try {
     const known = serverTypes(cfg);
-    for (const batch of batches(dirtyRecords(useData.getState(), cfg.confirmed, known))) {
+    const pushed = pushedTypes(cfg);
+    for (const batch of batches(dirtyRecords(useData.getState(), cfg.confirmed, pushed))) {
       await pushTo(cfg, batch);
-      for (const type of known) for (const rec of batch[type] ?? []) cfg.confirmed[`${type}:${rec.id}`] = rec.updatedAt;
+      for (const type of pushed) for (const rec of batch[type] ?? []) cfg.confirmed[`${type}:${rec.id}`] = rec.updatedAt;
       saveConfig(cfg);
     }
     const res = await pullFrom(cfg, cfg.lastRev);
     applyRemote(res.records, cfg.confirmed);
+    if (cfg.role === 'teacher') pruneForTeacher(res.gone?.lessons ?? [], cfg.confirmed);
     cfg.lastRev = res.rev;
     cfg.types = res.types ?? [...BASE_TYPES];
     cfg.anyType = !!res.anyType;
@@ -282,7 +353,7 @@ async function syncOnce() {
       status: 'idle',
       lastSyncAt: Date.now(),
       error: undefined,
-      pending: countOf(dirtyRecords(useData.getState(), cfg.confirmed)),
+      pending: countOf(dirtyRecords(useData.getState(), cfg.confirmed, pushedTypes(cfg))),
       outdated: isOutdated(cfg),
     });
   } catch (e) {
@@ -296,12 +367,13 @@ export function startSync() {
   const cfg = loadConfig();
   useSync.setState({ configured: !!cfg, outdated: !!cfg && isOutdated(cfg), mode: modeOf(cfg) });
 
-  // Signing in as the admin moves this device onto the account. A device with
-  // records of its own asks first, so nobody's test data lands in her account by accident.
+  // Signing in moves this device onto the account. An admin's device with records
+  // of its own asks first, so nobody's test data lands in her account by accident;
+  // anyone else only ever takes the account's records.
   useAccount.subscribe((a, prev) => {
     if (a.status === prev.status && a.role === prev.role) return;
-    if (a.status === 'in' && a.role === 'admin') {
-      if (loadConfig()?.kind === 'cloud' || !hasOwnRecords()) moveToCloud('replace');
+    if (a.status === 'in' && a.role) {
+      if (loadConfig()?.kind === 'cloud' || !hasOwnRecords() || a.role !== 'admin') moveToCloud('replace');
       else useSync.setState({ choosing: true });
     } else {
       useSync.setState({ choosing: false });
@@ -314,7 +386,7 @@ export function startSync() {
     if (!TYPES.some((t) => s[t] !== prev[t])) return;
     const cfg = loadConfig();
     if (!cfg) return;
-    const pending = countOf(dirtyRecords(s, cfg.confirmed));
+    const pending = countOf(dirtyRecords(s, cfg.confirmed, pushedTypes(cfg)));
     useSync.setState({ pending });
     if (pending === 0) return;
     window.clearTimeout(timer);
@@ -379,7 +451,7 @@ export function hasOwnRecords(): boolean {
 export function moveToCloud(mode: 'merge' | 'replace'): Promise<void> {
   if (loadConfig()?.kind !== 'cloud') {
     if (mode === 'replace' || useData.getState().seeded === 'demo') useData.getState().clearAll();
-    saveConfig({ kind: 'cloud', lastRev: 0, confirmed: {}, anyType: true });
+    saveConfig({ kind: 'cloud', lastRev: 0, confirmed: {}, anyType: true, role: currentRole() });
     useSync.setState({ configured: true, status: 'idle', error: undefined, outdated: false, mode: 'cloud' });
   }
   useSync.setState({ choosing: false });

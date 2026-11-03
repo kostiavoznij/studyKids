@@ -1,9 +1,12 @@
 import { useMemo } from 'react';
+import { useUi } from '../ui/uiStore';
+import { useAccess } from './access';
 import { withCorrections } from './bank';
 import { colorHex } from './constants';
 import { useData } from './store';
 import { missingTaxes, planOf, receivedByMonth, thisMonth } from './taxes';
-import type { DayOff, Group, ID, Lesson, Payment, Student, TaxPayment } from './types';
+import { dayOffApplies, liveTeachers, teacherOf } from './teachers';
+import { ALL_TEACHERS, type DayOff, type Group, type ID, type Lesson, type Payment, type Student, type TaxPayment } from './types';
 
 // Derived lists are cached per store snapshot: the records are replaced on every
 // change, so a WeakMap keyed by the record object invalidates itself.
@@ -124,6 +127,57 @@ export const useLiveStudents = () => liveStudents(useData((s) => s.students));
 export const useLiveGroups = () => liveGroups(useData((s) => s.groups));
 export const useDaysOff = () => liveDaysOff(useData((s) => s.daysOff));
 export const useLiveTaxes = () => liveTaxes(useData((s) => s.taxes));
+export const useTeachers = () => liveTeachers(useData((s) => s.teachers));
+export const useActiveTeachers = () => useTeachers().filter((t) => t.status === 'active');
+/** True once the school has more than one working teacher: only then do teacher pickers and names appear. */
+export const useManyTeachers = () => useActiveTeachers().length > 1;
+
+/**
+ * Whose lessons the calendar shows: one teacher's, or null for everyone's. A
+ * teacher's own device only has her lessons, and with a single teacher there is
+ * nothing to choose.
+ */
+export function useCalendarTeacher(): ID | null {
+  const chosen = useUi((s) => s.teacher);
+  const active = useActiveTeachers();
+  const role = useAccess().role;
+  if (role === 'teacher' || active.length < 2 || !active.some((t) => t.id === chosen)) return null;
+  return chosen;
+}
+
+const byTeacherCache = new WeakMap<object, Map<ID, Record<ID, Lesson>>>();
+/** The same records, only one teacher's; cached so the per-record caches above keep working. */
+export function lessonsOfTeacher(rec: Record<ID, Lesson>, teacher: ID | null): Record<ID, Lesson> {
+  if (!teacher) return rec;
+  let m = byTeacherCache.get(rec);
+  if (!m) byTeacherCache.set(rec, (m = new Map()));
+  let out = m.get(teacher);
+  if (!out) {
+    out = {};
+    for (const l of Object.values(rec)) if (teacherOf(l) === teacher) out[l.id] = l;
+    m.set(teacher, out);
+  }
+  return out;
+}
+
+export const useCalendarLessons = () => lessonsOfTeacher(useData((s) => s.lessons), useCalendarTeacher());
+
+/**
+ * Days off that make a whole calendar day a day off. For one teacher: hers and
+ * the ones for everyone; for the whole school with several teachers: only the
+ * ones for everyone (one teacher's vacation is not the school's).
+ */
+export function useCalendarDaysOff(): DayOff[] {
+  const all = useDaysOff();
+  const teacher = useCalendarTeacher();
+  const severalTeachers = useManyTeachers();
+  const role = useAccess().role;
+  const many = severalTeachers && role !== 'teacher';
+  return useMemo(() => {
+    if (teacher) return all.filter((d) => dayOffApplies(d, teacher));
+    return many ? all.filter((d) => d.teacherId === ALL_TEACHERS) : all;
+  }, [all, teacher, many]);
+}
 
 export function useTaxPlan() {
   const plans = useData((s) => s.taxPlans);

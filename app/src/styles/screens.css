@@ -27,6 +27,11 @@
   gap: 8px;
 }
 
+/* A teacher only marks the lesson as done. */
+.ls-actions[data-single] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .ls-action {
   display: flex;
   flex-direction: column;

@@ -24,7 +24,7 @@ export function cloud(): SupabaseClient {
   return client;
 }
 
-export type Role = 'admin' | 'teacher';
+export type Role = 'admin' | 'manager' | 'teacher';
 
 /**
  * 'off' — no server in this build; 'loading' — still finding out; 'out' — not signed in;
@@ -72,7 +72,7 @@ async function checkRole(email: string) {
     else useAccount.setState({ status: 'error', email, error: error.message });
     return;
   }
-  if (data === 'admin' || data === 'teacher') {
+  if (data === 'admin' || data === 'manager' || data === 'teacher') {
     localStorage.setItem(REMEMBERED, JSON.stringify({ email, role: data }));
     useAccount.setState({ status: 'in', email, role: data, error: undefined });
   } else {
@@ -142,10 +142,13 @@ export async function retryAccount() {
   else useAccount.setState({ status: 'out' });
 }
 
+/** Roles given in the members list; a teacher is let in by her teacher card instead. */
+export type MemberRole = 'admin' | 'manager';
+
 /** Someone allowed into the app (Налаштування → Доступ). */
 export interface Member {
   email: string;
-  role: Role;
+  role: MemberRole;
   name: string;
   createdAt: string;
   /** null until the person has signed in for the first time */
@@ -166,7 +169,7 @@ export async function listMembers(): Promise<Member[]> {
 }
 
 /** Gives the e-mail access, or changes the role and name of someone already listed. */
-export async function saveMember(email: string, role: Role, name: string) {
+export async function saveMember(email: string, role: MemberRole, name: string) {
   const { error } = await cloud().rpc('set_member', { member_email: email, member_role: role, member_name: name });
   if (error) throw failure(error);
 }

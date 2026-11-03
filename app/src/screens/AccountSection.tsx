@@ -1,6 +1,7 @@
 import { LogIn, LogOut, RefreshCw, UserRound } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { retryAccount, serverCounts, signIn, signOut, useAccount } from '../data/cloud';
+import { ROLE_LABEL } from '../data/access';
+import { retryAccount, serverCounts, signIn, signOut, useAccount, type Role } from '../data/cloud';
 import { useData, type DataState } from '../data/store';
 import { disconnect, moveToCloud, syncNow, useSync } from '../data/sync';
 import { LESSONS, nPlural, STUDENTS } from '../lib/format';
@@ -93,19 +94,8 @@ export function AccountSection() {
         </div>
       </>
     );
-  } else if (account.role === 'teacher') {
-    body = (
-      <>
-        <p className="muted" style={{ fontSize: 14 }}>
-          Ви увійшли як {account.email}. Кабінет вчительки ще в розробці.
-        </p>
-        <button className="btn btn-ghost" style={{ marginTop: 12 }} onClick={() => signOut()}>
-          <LogOut size={17} /> Вийти
-        </button>
-      </>
-    );
   } else {
-    body = <SignedIn email={account.email ?? ''} />;
+    body = <SignedIn email={account.email ?? ''} role={account.role ?? 'admin'} />;
   }
 
   return (
@@ -118,20 +108,20 @@ export function AccountSection() {
   );
 }
 
-function SignedIn({ email }: { email: string }) {
+function SignedIn({ email, role }: { email: string; role: Role }) {
   const sync = useSync();
   const local = useData();
   const clearAll = useData((s) => s.clearAll);
   const notify = useUi((s) => s.notify);
   const [server, setServer] = useState<Record<string, number> | null>(null);
 
-  // Compare with the server after every sync, so moving over can be checked by eye.
+  // Compare with the server after every sync, so moving over can be checked by eye (only the admin sees all of it).
   useEffect(() => {
-    if (sync.status !== 'idle') return;
+    if (sync.status !== 'idle' || role !== 'admin') return;
     serverCounts()
       .then(setServer)
       .catch(() => setServer(null));
-  }, [sync.status, sync.lastSyncAt]);
+  }, [sync.status, sync.lastSyncAt, role]);
 
   const logout = async () => {
     const unsent = sync.pending > 0;
@@ -155,10 +145,15 @@ function SignedIn({ email }: { email: string }) {
   return (
     <>
       <p className="muted" style={{ fontSize: 14, marginBottom: 10 }}>
-        Ви увійшли як <b>{email}</b> · адміністратор
+        Ви увійшли як <b>{email}</b> · {ROLE_LABEL[role]}
       </p>
+      {role === 'teacher' && (
+        <p className="muted" style={{ fontSize: 14, marginBottom: 10 }}>
+          Ви бачите свій розклад, своїх учнів, теми й нотатки. Відмічайте проведені уроки й записуйте теми — адміністратор і менеджер побачать це одразу.
+        </p>
+      )}
       <SyncStatusLine />
-      <table className="account-counts">
+      {role === 'admin' && <table className="account-counts">
         <thead>
           <tr>
             <th />
@@ -179,7 +174,7 @@ function SignedIn({ email }: { email: string }) {
             );
           })}
         </tbody>
-      </table>
+      </table>}
       <div className="set-buttons" style={{ marginTop: 14 }}>
         <button className="btn btn-ghost" onClick={() => syncNow()} disabled={sync.status === 'syncing'}>
           <RefreshCw size={17} /> Синхронізувати зараз

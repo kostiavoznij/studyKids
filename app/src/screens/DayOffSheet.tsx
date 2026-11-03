@@ -1,12 +1,14 @@
 import { Backpack, Coffee, PartyPopper, StickyNote, Thermometer, TreePalm, type LucideIcon } from 'lucide-react';
 import { useState } from 'react';
 import { DAY_OFF_KINDS, dayOffLabel } from '../data/constants';
-import { lessonTitle, liveLessons } from '../data/selectors';
+import { lessonTitle, liveLessons, useActiveTeachers } from '../data/selectors';
 import { useData } from '../data/store';
-import type { DayOffKind, ID } from '../data/types';
+import { dayOffApplies, teacherOf } from '../data/teachers';
+import { ALL_TEACHERS, MAIN_TEACHER, type DayOffKind, type ID } from '../data/types';
 import { shortDay, timeOf, todayKey } from '../lib/dates';
 import { LESSONS, nPlural } from '../lib/format';
 import { Sheet, Switch } from '../ui/components';
+import { TeacherChips } from '../ui/fields';
 import { ask, useUi } from '../ui/uiStore';
 
 export const DAY_OFF_ICONS: Record<DayOffKind, LucideIcon> = {
@@ -19,7 +21,7 @@ export const DAY_OFF_ICONS: Record<DayOffKind, LucideIcon> = {
 };
 
 /** Mark a day (or a few) without lessons and say why. */
-export function DayOffSheet({ id, day, onClose }: { id?: ID; day?: string; onClose: () => void }) {
+export function DayOffSheet({ id, day, teacherId, onClose }: { id?: ID; day?: string; teacherId?: ID; onClose: () => void }) {
   const existing = useData((s) => (id ? s.daysOff[id] : undefined));
   const rec = useData((s) => s.lessons);
   const students = useData((s) => s.students);
@@ -35,13 +37,26 @@ export function DayOffSheet({ id, day, onClose }: { id?: ID; day?: string; onClo
   const [to, setTo] = useState(existing?.to ?? start);
   const [note, setNote] = useState(existing?.note ?? '');
   const [cancel, setCancel] = useState(existing?.cancelLessons ?? true);
+  const teachers = useActiveTeachers();
+  const [who, setWho] = useState<ID>(existing ? (existing.teacherId ?? MAIN_TEACHER) : (teacherId ?? MAIN_TEACHER));
 
   const last = to < from ? from : to;
-  const affected = liveLessons(rec).filter((l) => l.status === 'planned' && l.start.slice(0, 10) >= from && l.start.slice(0, 10) <= last);
+  const mark = { teacherId: who };
+  const affected = liveLessons(rec).filter(
+    (l) => l.status === 'planned' && l.start.slice(0, 10) >= from && l.start.slice(0, 10) <= last && dayOffApplies(mark, teacherOf(l)),
+  );
 
   const save = () => {
     const before = affected.map((l) => ({ ...l }));
-    const savedId = saveDayOff({ ...(existing ?? {}), kind, from, to: last, note: note.trim(), cancelLessons: cancel });
+    const savedId = saveDayOff({
+      ...(existing ?? {}),
+      kind,
+      from,
+      to: last,
+      note: note.trim(),
+      cancelLessons: cancel,
+      teacherId: who === MAIN_TEACHER ? undefined : who,
+    });
     const cancelled = cancel ? before.length : 0;
     notify(
       `${dayOffLabel(kind)}${cancelled ? ` · скасовано ${nPlural(cancelled, LESSONS)}` : ''}`,
@@ -92,6 +107,16 @@ export function DayOffSheet({ id, day, onClose }: { id?: ID; day?: string; onClo
           })}
         </div>
       </div>
+
+      {teachers.length > 1 && (
+        <div className="field">
+          <span className="field-label">Для кого</span>
+          <TeacherChips teachers={teachers} value={who} onChange={setWho} everyone={{ id: ALL_TEACHERS, label: 'Для всіх' }} />
+          <span className="field-hint">
+            {who === ALL_TEACHERS ? 'Свято чи канікули для всієї школи: скасуються уроки всіх вчительок.' : 'Скасуються лише її уроки.'}
+          </span>
+        </div>
+      )}
 
       <div className="row">
         <label className="field">

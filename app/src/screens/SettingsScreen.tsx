@@ -1,5 +1,6 @@
 import { Check, Download, Laptop, Smartphone, Upload } from 'lucide-react';
 import { useRef, type CSSProperties } from 'react';
+import { useAccess } from '../data/access';
 import { THEMES } from '../data/constants';
 import { useData } from '../data/store';
 import type { ThemeId } from '../data/types';
@@ -23,6 +24,7 @@ export function SettingsScreen() {
   const notify = useUi((s) => s.notify);
   const file = useRef<HTMLInputElement>(null);
   const connected = useSync((s) => s.configured);
+  const access = useAccess();
   // On the account, wiping this device alone would only hide the records from it.
   const onAccount = useSync((s) => s.mode === 'cloud');
 
@@ -75,7 +77,7 @@ export function SettingsScreen() {
           </div>
         </section>
 
-        <section className="section card">
+        {access.manage && <section className="section card">
           <h2 className="set-title">Нові учні та оплати</h2>
           <div className="row">
             <PriceField label="Ціна нового учня" price={settings.defaultPrice} onPrice={(v) => update({ defaultPrice: v })} />
@@ -98,7 +100,7 @@ export function SettingsScreen() {
             <span className="field-label">Тривалість уроку за замовчуванням</span>
             <DurationChips value={settings.defaultDuration} onChange={(v) => update({ defaultDuration: v })} />
           </div>
-        </section>
+        </section>}
 
         <section className="section card">
           <h2 className="set-title">Календар</h2>
@@ -167,7 +169,7 @@ export function SettingsScreen() {
         <MembersSection />
         {!onAccount && <SyncSection />}
 
-        <section className="section card">
+        {access.manage && <section className="section card">
           <h2 className="set-title">Дані</h2>
           {seeded === 'demo' && (
             <div className="banner" style={{ marginBottom: 14 }}>
@@ -178,9 +180,11 @@ export function SettingsScreen() {
             <button className="btn btn-ghost" onClick={download}>
               <Download size={18} /> Зберегти копію у файл
             </button>
-            <button className="btn btn-ghost" onClick={() => file.current?.click()}>
-              <Upload size={18} /> Відновити з файлу
-            </button>
+            {access.restore && (
+              <button className="btn btn-ghost" onClick={() => file.current?.click()}>
+                <Upload size={18} /> Відновити з файлу
+              </button>
+            )}
             <input
               ref={file}
               type="file"
@@ -197,19 +201,20 @@ export function SettingsScreen() {
                 Почати з чистого аркуша
               </button>
             ) : (
-              !connected && (
+              !connected &&
+              access.restore && (
                 <button className="btn btn-ghost" onClick={restoreDemo}>
                   Показати демо-дані
                 </button>
               )
             )}
-            {seeded !== 'demo' && !onAccount && (
+            {seeded !== 'demo' && !onAccount && access.restore && (
               <button className="btn btn-danger-soft" onClick={startClean}>
                 Видалити всі дані
               </button>
             )}
           </div>
-        </section>
+        </section>}
 
         <section className="section card">
           <h2 className="set-title">Встановити як застосунок</h2>

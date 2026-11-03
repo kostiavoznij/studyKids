@@ -54,13 +54,6 @@ export function LockScreen() {
         </button>
       </>
     );
-  } else if (account.status === 'in') {
-    text = 'Кабінет вчительки ще в розробці.';
-    actions = (
-      <button className="btn btn-ghost" onClick={() => signOut()}>
-        <LogOut size={17} /> Вийти
-      </button>
-    );
   } else {
     text = 'Доступ лише для запрошених. Увійдіть акаунтом Google, якому відкрито доступ.';
     actions = (

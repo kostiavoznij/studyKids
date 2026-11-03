@@ -1,5 +1,6 @@
 import { ChevronLeft, ChevronRight, CircleAlert, Info, TrendingDown, TrendingUp } from 'lucide-react';
 import { useState } from 'react';
+import { useAccess } from '../data/access';
 import { dayOffLabel } from '../data/constants';
 import { lessonsOfStudent, useDaysOff, useLiveLessons, useLivePayments, useLiveStudents, useReceived } from '../data/selectors';
 import { useAccounts } from '../data/billing';
@@ -29,6 +30,7 @@ export function StatsScreen() {
   const daysOff = useDaysOff();
   const workDays = useData((s) => s.settings.workDays);
   const accounts = useAccounts();
+  const finance = useAccess().finance;
   const now = useNow();
   const [period, setPeriod] = useState<Period>('month');
   const [anchor, setAnchor] = useState(() => new Date());
@@ -78,9 +80,11 @@ export function StatsScreen() {
       const y = summarize(ls, prev, now, st.id);
       return { st, x, y };
     })
-    .filter((r) => r.x.total > 0 || r.y.done > 0)
-    .sort((p, q) => q.x.earned + q.x.expected - (p.x.earned + p.x.expected));
-  const maxIncome = Math.max(1, ...rows.map((r) => r.x.earned + r.x.expected));
+    .filter((r) => r.x.total > 0 || r.y.done > 0);
+  // Without money the students rank by lessons.
+  const weight = (x: (typeof rows)[number]['x']) => (finance ? x.earned + x.expected : x.done + x.planned);
+  rows.sort((p, q) => weight(q.x) - weight(p.x));
+  const maxIncome = Math.max(1, ...rows.map((r) => weight(r.x)));
 
   return (
     <div className="screen">
@@ -102,7 +106,21 @@ export function StatsScreen() {
           </div>
         </div>
 
-        <div className="hero-card rise">
+        {!finance && (
+          <div className="hero-card rise">
+            <div className="hero-label">Уроки за період</div>
+            <div className="hero-value">{a.done + a.planned}</div>
+            <div className="hero-sub">
+              проведено {a.done}
+              {a.planned > 0 && ` · ще заплановано ${a.planned}`}
+            </div>
+            <div className="hero-foot">
+              {b.done > 0 ? <Delta pct={deltaPct(a.done + a.planned, b.done)} suffix={PREV_LABEL[period]} /> : <span className="faint">немає даних за попередній період</span>}
+            </div>
+          </div>
+        )}
+
+        {finance && <div className="hero-card rise">
           <div className="hero-label">Дохід за проведені уроки</div>
           <div className="hero-value">{money(projected)}</div>
           <div className="hero-sub">
@@ -145,16 +163,20 @@ export function StatsScreen() {
               <ChevronRight size={18} />
             </button>
           )}
-        </div>
+        </div>}
 
         <div className="tiles four" style={{ marginTop: 12 }}>
           <Tile label="Проведено уроків" value={a.done} sub={<><Delta pct={deltaPct(a.done + a.planned, b.done)} /> {a.planned > 0 ? `+ ${a.planned} попереду` : ''}</>} />
-          <Tile label="Надійшло на рахунок" value={<Money value={inflow.amount} />} sub={inflowPrev.amount ? <Delta pct={deltaPct(inflow.amount, inflowPrev.amount)} /> : `${inflow.count} оплат`} />
+          {finance ? (
+            <Tile label="Надійшло на рахунок" value={<Money value={inflow.amount} />} sub={inflowPrev.amount ? <Delta pct={deltaPct(inflow.amount, inflowPrev.amount)} /> : `${inflow.count} оплат`} />
+          ) : (
+            <Tile label="Уроків з темою" value={a.topics} sub={a.done ? `з ${a.done} проведених` : '—'} />
+          )}
           <Tile label="Пробні уроки" value={a.trials} sub={conv.trials ? `стали учнями: ${conv.converted} з ${conv.trials}` : 'знайомство з новими учнями'} />
           <Tile label="Учнів на уроках" value={a.students} sub={b.students ? `було ${b.students}` : '—'} />
-          <Tile label="Скасовано" value={a.cancelled} sub={a.cancelled ? `учнями ${a.cancelledByStudent} · мною ${a.cancelledByTeacher}` : 'без скасувань'} />
+          <Tile label="Скасовано" value={a.cancelled} sub={a.cancelled ? `учнями ${a.cancelledByStudent} · вчителькою ${a.cancelledByTeacher}` : 'без скасувань'} />
           <Tile label="Перенесено" value={a.moved} sub={b.moved ? `було ${b.moved}` : 'на інший час'} />
-          <Tile label="Середня ціна уроку" value={a.avgPrice ? <Money value={a.avgPrice} /> : '—'} sub="за проведений урок" />
+          {finance && <Tile label="Середня ціна уроку" value={a.avgPrice ? <Money value={a.avgPrice} /> : '—'} sub="за проведений урок" />}
           <Tile label="Засвоєння" value={a.avgGrade != null ? `${grade1(a.avgGrade)} з 5` : '—'} sub={b.avgGrade != null ? `було ${grade1(b.avgGrade)}` : 'середня оцінка'} />
         </div>
 
@@ -189,10 +211,22 @@ export function StatsScreen() {
             {periodLabel(period, anchor)}
           </span>
         </div>
-        <DaysOffCard now={offNow} before={offBefore} period={period} />
+        <DaysOffCard now={offNow} before={offBefore} period={period} finance={finance} />
 
         <div className="stats-charts">
-          <div className="card">
+          {!finance && (
+            <div className="card">
+              <div className="card-title">
+                <h3>Проведено уроків по місяцях</h3>
+              </div>
+              <ColumnChart
+                label="Проведені уроки по місяцях"
+                data={series.map((p) => ({ key: p.key, label: p.label, title: p.longLabel, value: p.done, highlight: p.current }))}
+                format={(v) => String(v)}
+              />
+            </div>
+          )}
+          {finance && <div className="card">
             <div className="card-title">
               <h3>{metric === 'earned' ? 'Зароблено' : 'Надійшло на рахунок'} по місяцях</h3>
               <div className="seg seg-sm">
@@ -210,7 +244,7 @@ export function StatsScreen() {
               format={(v) => money(v)}
               tickFormat={compact}
             />
-          </div>
+          </div>}
 
           <div className="card">
             <div className="card-title">
@@ -241,13 +275,13 @@ export function StatsScreen() {
                 <div className="list-main">
                   <div className="rank-top">
                     <span className="list-title">{st.name}</span>
-                    <span className="rank-money">{money(x.earned + x.expected)}</span>
+                    <span className="rank-money">{finance ? money(x.earned + x.expected) : nPlural(x.done + x.planned, LESSONS)}</span>
                   </div>
                   <div className="rank-bar">
-                    <span style={{ width: `${((x.earned + x.expected) / maxIncome) * 100}%` }} />
+                    <span style={{ width: `${(weight(x) / maxIncome) * 100}%` }} />
                   </div>
                   <div className="list-sub">
-                    {nPlural(x.done + x.planned, LESSONS)}
+                    {finance ? nPlural(x.done + x.planned, LESSONS) : `проведено ${x.done}`}
                     {y.done > 0 && ` (було ${y.done})`}
                     {x.cancelled > 0 && ` · скасовано ${x.cancelled}`}
                     {x.avgGrade != null && ` · засвоєння ${grade1(x.avgGrade)}`}
@@ -262,7 +296,7 @@ export function StatsScreen() {
   );
 }
 
-function DaysOffCard({ now, before, period }: { now: DayOffStat[]; before: DayOffStat[]; period: Period }) {
+function DaysOffCard({ now, before, period, finance }: { now: DayOffStat[]; before: DayOffStat[]; period: Period; finance: boolean }) {
   const sick = now.find((x) => x.kind === 'sick');
   const rows = sick ? now : [{ kind: 'sick' as const, days: 0, lessons: 0, amount: 0 }, ...now];
   if (now.length === 0 && before.length === 0) {
@@ -285,7 +319,7 @@ function DaysOffCard({ now, before, period }: { now: DayOffStat[]; before: DayOf
             <div className="list-main">
               <div className="list-title">{dayOffLabel(x.kind)}</div>
               <div className="list-sub" style={{ whiteSpace: 'normal' }}>
-                {x.lessons > 0 && `скасовано ${nPlural(x.lessons, LESSONS)}${x.amount > 0 ? ` · ${money(x.amount)}` : ''} · `}
+                {x.lessons > 0 && `скасовано ${nPlural(x.lessons, LESSONS)}${finance && x.amount > 0 ? ` · ${money(x.amount)}` : ''} · `}
                 {`${PREV_SHORT[period]}: ${was ? nPlural(was, DAYS) : 'не було'}`}
               </div>
             </div>

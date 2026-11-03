@@ -2,14 +2,15 @@ import { parseISO } from 'date-fns';
 import { Plus, Repeat, Sparkles, UserPlus } from 'lucide-react';
 import { useState } from 'react';
 import { isTrial } from '../data/money';
-import { lessonsByDay, lessonTitle, useLiveGroups, useLiveStudents } from '../data/selectors';
+import { lessonsByDay, lessonTitle, useActiveTeachers, useLiveGroups, useLiveStudents } from '../data/selectors';
 import { studentSlotKey } from '../data/schedule';
 import { useData } from '../data/store';
-import type { ID, Lesson, Participant } from '../data/types';
+import { teacherOf } from '../data/teachers';
+import { MAIN_TEACHER, type ID, type Lesson, type Participant } from '../data/types';
 import { cap, isoWeekday, minutesOf, timeOf, todayKey, WEEKDAYS_LONG } from '../lib/dates';
 import { uid } from '../lib/format';
 import { Avatar, Empty, Segmented, Sheet, Switch } from '../ui/components';
-import { DurationChips, PriceField, StudentChips } from '../ui/fields';
+import { DurationChips, PriceField, StudentChips, TeacherChips } from '../ui/fields';
 import { useUi } from '../ui/uiStore';
 
 type Mode = 'one' | 'group';
@@ -19,6 +20,7 @@ interface Prefill {
   studentId?: ID;
   groupId?: ID;
   trial?: boolean;
+  teacherId?: ID;
 }
 
 export function NewLessonSheet({ prefill, onClose }: { prefill: Prefill; onClose: () => void }) {
@@ -67,6 +69,10 @@ export function LessonForm({ lesson, prefill, onDone }: { lesson?: Lesson; prefi
   const [topic, setTopic] = useState(lesson?.topic ?? '');
   const [weekly, setWeekly] = useState(false);
   const [newName, setNewName] = useState('');
+  const teachers = useActiveTeachers();
+  const [teacher, setTeacher] = useState<ID>(
+    lesson ? teacherOf(lesson) : preGroup ? teacherOf(preGroup) : preStudent ? teacherOf(preStudent) : (prefill?.teacherId ?? MAIN_TEACHER),
+  );
 
   // Trial lessons are for newcomers, so students still on a trial show up there too.
   const students = allStudents.filter(
@@ -93,6 +99,7 @@ export function LessonForm({ lesson, prefill, onDone }: { lesson?: Lesson; prefi
     const st = studentsRec[id];
     setIds([id]);
     setGroupId(undefined);
+    if (!lesson && st) setTeacher(teacherOf(st));
     if (!lesson && st && !trial) {
       setDuration(st.duration);
       setPrice(st.price);
@@ -106,6 +113,7 @@ export function LessonForm({ lesson, prefill, onDone }: { lesson?: Lesson; prefi
     setIds(g.studentIds);
     setPrice(g.price);
     setDuration(g.duration);
+    if (!lesson) setTeacher(teacherOf(g));
   };
   const switchMode = (m: Mode) => {
     setMode(m);
@@ -126,12 +134,16 @@ export function LessonForm({ lesson, prefill, onDone }: { lesson?: Lesson; prefi
   const addNewcomer = () => {
     const name = newName.trim();
     if (!name) return;
-    const id = saveStudent({ name, status: 'trial' });
+    const id = saveStudent({ name, status: 'trial', teacherId: teacher === MAIN_TEACHER ? undefined : teacher });
     setIds([id]);
     setNewName('');
   };
 
-  const sameDay = (lessonsByDay(rec).get(day) ?? []).filter((l) => l.id !== lesson?.id && l.status !== 'cancelled');
+  // Weekly lessons are the student's, so they go to the student's teacher.
+  const weeklyOwner = weekly && mode === 'one' && !trial ? studentsRec[ids[0]] : undefined;
+  const who = weeklyOwner ? teacherOf(weeklyOwner) : teacher;
+  // Only the same teacher's lessons can clash; other teachers teach at the same time all the time.
+  const sameDay = (lessonsByDay(rec).get(day) ?? []).filter((l) => l.id !== lesson?.id && l.status !== 'cancelled' && teacherOf(l) === who);
   const s = minutesOf(`${day}T${time}`);
   const clash = sameDay.filter((l) => {
     const ls = minutesOf(l.start);
@@ -150,8 +162,9 @@ export function LessonForm({ lesson, prefill, onDone }: { lesson?: Lesson; prefi
     });
     const gid = mode === 'group' ? groupId : undefined;
 
+    const teacherId = who === MAIN_TEACHER ? undefined : who;
     if (lesson) {
-      updateLesson(lesson.id, { start, duration, participants, groupId: gid });
+      updateLesson(lesson.id, { start, duration, participants, groupId: gid, teacherId });
       notify('Зміни збережено');
       onDone();
       return;
@@ -159,7 +172,7 @@ export function LessonForm({ lesson, prefill, onDone }: { lesson?: Lesson; prefi
 
     const st = studentsRec[ids[0]];
     if (trial) {
-      createLesson({ start, duration, participants, kind: 'trial' });
+      createLesson({ start, duration, participants, kind: 'trial', teacherId });
       notify(`Пробний урок: ${st?.name ?? ''}`);
     } else if (weekly && mode === 'one' && st) {
       const slot = { id: uid(), weekday, time, duration };
@@ -169,11 +182,11 @@ export function LessonForm({ lesson, prefill, onDone }: { lesson?: Lesson; prefi
       if (made) {
         if (topic) updateLesson(made.id, { topic });
       } else {
-        createLesson({ start, duration, participants, topic });
+        createLesson({ start, duration, participants, topic, teacherId });
       }
       notify(`${st.name}: щотижня, ${WEEKDAYS_LONG[weekday - 1]} о ${time}`);
     } else {
-      createLesson({ start, duration, participants, groupId: gid, topic });
+      createLesson({ start, duration, participants, groupId: gid, topic, teacherId });
       notify('Урок додано');
     }
     setDay(day);
@@ -248,6 +261,19 @@ export function LessonForm({ lesson, prefill, onDone }: { lesson?: Lesson; prefi
             {groups.length === 0 && <span className="field-hint">Постійну групу з розкладом можна створити на вкладці «Учні».</span>}
           </div>
         </>
+      )}
+
+      {teachers.length > 1 && (
+        <div className="field" style={{ marginTop: 16 }}>
+          <span className="field-label">Вчителька</span>
+          {weeklyOwner ? (
+            <span className="field-hint">
+              Щотижневі уроки веде вчителька учня: {teachers.find((t) => t.id === who)?.name ?? '—'}. Змінити її можна в картці учня.
+            </span>
+          ) : (
+            <TeacherChips teachers={teachers} value={teacher} onChange={setTeacher} />
+          )}
+        </div>
       )}
 
       <div className="row" style={{ marginTop: 16 }}>

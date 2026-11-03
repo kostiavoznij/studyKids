@@ -1,5 +1,33 @@
 export type ID = string;
 
+/**
+ * The teacher who kept the records before there were several: anything without
+ * a teacherId is hers.
+ */
+export const MAIN_TEACHER = 'main';
+/** A day off that applies to every teacher (a public holiday, school break). */
+export const ALL_TEACHERS = '*';
+
+export type TeacherStatus = 'active' | 'archived';
+
+/**
+ * A teacher of the school. With a Gmail she can sign in and sees only her own
+ * lessons and students, without any money (the server decides that, see
+ * supabase/migrations).
+ */
+export interface Teacher {
+  id: ID;
+  name: string;
+  /** key from STUDENT_COLORS */
+  color: string;
+  /** the Google account she signs in with; '' — no sign-in */
+  email: string;
+  status: TeacherStatus;
+  createdAt: number;
+  updatedAt: number;
+  deletedAt?: number;
+}
+
 /** Who initiated a cancellation or a reschedule. */
 export type Initiator = 'student' | 'teacher';
 
@@ -52,6 +80,8 @@ export interface Student {
   /** 'yyyy-MM-dd' */
   startDate: string;
   notes: Note[];
+  /** who teaches the student; missing — MAIN_TEACHER */
+  teacherId?: ID;
   createdAt: number;
   updatedAt: number;
   deletedAt?: number;
@@ -67,6 +97,8 @@ export interface Group {
   price: number;
   duration: number;
   status: StudentStatus;
+  /** who teaches the group; missing — MAIN_TEACHER */
+  teacherId?: ID;
   createdAt: number;
   updatedAt: number;
   deletedAt?: number;
@@ -132,6 +164,8 @@ export interface Lesson {
   moves: Move[];
   /** set for lessons generated from a weekly slot, keeps the generator idempotent */
   slotKey?: string;
+  /** who teaches it; missing — MAIN_TEACHER */
+  teacherId?: ID;
   createdAt: number;
   updatedAt: number;
   deletedAt?: number;
@@ -232,6 +266,8 @@ export interface DayOff {
   note: string;
   /** lessons that fall into these days are cancelled, including ones the schedule adds later */
   cancelLessons: boolean;
+  /** whose days these are: a teacher, ALL_TEACHERS, or missing — MAIN_TEACHER */
+  teacherId?: ID;
   createdAt: number;
   updatedAt: number;
   deletedAt?: number;

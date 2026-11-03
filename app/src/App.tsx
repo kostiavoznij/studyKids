@@ -1,8 +1,9 @@
 import { BarChart3, CalendarDays, Landmark, Settings, Users } from 'lucide-react';
 import { useEffect } from 'react';
+import { useAccess, type Access } from './data/access';
 import { cloudEnabled, useAccount } from './data/cloud';
 import { dayOffLabel } from './data/constants';
-import { dayOffOn, lessonsByDay, useDaysOff, useMissingTaxes } from './data/selectors';
+import { dayOffOn, lessonsByDay, useCalendarDaysOff, useCalendarLessons, useMissingTaxes } from './data/selectors';
 import { summarize } from './data/stats';
 import { useData } from './data/store';
 import { isoWeekday, todayKey } from './lib/dates';
@@ -22,23 +23,24 @@ import { StudentPage, StudentsScreen } from './screens/StudentsScreen';
 import { SyncBadge } from './screens/SyncSection';
 import { TaxPlanSheet } from './screens/TaxPlanSheet';
 import { TaxSheet } from './screens/TaxSheet';
+import { TeacherSheet } from './screens/TeacherSheet';
 import { ConfirmHost, ToastHost, useNow } from './ui/components';
 import { useRoute } from './ui/router';
 import { useUi } from './ui/uiStore';
 
-const NAV = [
-  { href: '/', label: 'Розклад', icon: CalendarDays, match: (p: string) => p === '/' },
-  { href: '/students', label: 'Учні', icon: Users, match: (p: string) => p.startsWith('/students') },
-  { href: '/stats', label: 'Статистика', icon: BarChart3, match: (p: string) => p.startsWith('/stats') },
-  { href: '/finance', label: 'Фінанси', icon: Landmark, match: (p: string) => p.startsWith('/finance') },
-  { href: '/settings', label: 'Налаштування', icon: Settings, match: (p: string) => p.startsWith('/settings') },
+const NAV: { href: string; label: string; icon: typeof Users; match: (p: string) => boolean; shown: (a: Access) => boolean }[] = [
+  { href: '/', label: 'Розклад', icon: CalendarDays, match: (p) => p === '/', shown: () => true },
+  { href: '/students', label: 'Учні', icon: Users, match: (p) => p.startsWith('/students'), shown: () => true },
+  { href: '/stats', label: 'Статистика', icon: BarChart3, match: (p) => p.startsWith('/stats'), shown: (a) => a.manage },
+  { href: '/finance', label: 'Фінанси', icon: Landmark, match: (p) => p.startsWith('/finance'), shown: (a) => a.finance },
+  { href: '/settings', label: 'Налаштування', icon: Settings, match: (p) => p.startsWith('/settings'), shown: () => true },
 ];
 
 /** Without access only the sign-in screen is shown, never the app itself. */
 export function App() {
   const account = useAccount();
   useTheme();
-  if (cloudEnabled && !(account.status === 'in' && account.role === 'admin')) {
+  if (cloudEnabled && !(account.status === 'in' && account.role)) {
     return (
       <>
         <LockScreen />
@@ -51,13 +53,15 @@ export function App() {
 
 function Shell() {
   const { path, parts } = useRoute();
-  const taxesDue = useMissingTaxes().length > 0;
+  const access = useAccess();
+  const taxesDue = useMissingTaxes().length > 0 && access.finance;
+  const nav = NAV.filter((n) => n.shown(access));
 
   let screen;
   if (parts[0] === 'students' && parts[1]) screen = <StudentPage key={parts[1]} id={parts[1]} />;
   else if (parts[0] === 'students') screen = <StudentsScreen />;
-  else if (parts[0] === 'stats') screen = <StatsScreen />;
-  else if (parts[0] === 'finance') screen = <FinanceScreen />;
+  else if (parts[0] === 'stats' && access.manage) screen = <StatsScreen />;
+  else if (parts[0] === 'finance' && access.finance) screen = <FinanceScreen />;
   else if (parts[0] === 'settings') screen = <SettingsScreen />;
   else screen = <CalendarScreen />;
 
@@ -69,7 +73,7 @@ function Shell() {
           <span style={{ flex: 1 }}>Уроки</span>
           <SyncBadge />
         </div>
-        {NAV.map((n) => (
+        {nav.map((n) => (
           <a key={n.href} className="side-link" href={`#${n.href}`} aria-current={n.match(path) ? 'page' : undefined}>
             <n.icon size={20} />
             {n.label}
@@ -82,7 +86,7 @@ function Shell() {
       <main className="main">{screen}</main>
 
       <nav className="tabbar">
-        {NAV.map((n) => (
+        {nav.map((n) => (
           <a key={n.href} className="tab" href={`#${n.href}`} aria-current={n.match(path) ? 'page' : undefined}>
             <n.icon size={23} strokeWidth={2.1} />
             {n.label === 'Налаштування' ? 'Ще' : n.label}
@@ -114,20 +118,23 @@ function OverlayHost() {
     case 'payment':
       return <PaymentSheet key={overlay.id ?? 'new'} prefill={overlay} onClose={close} />;
     case 'dayOff':
-      return <DayOffSheet key={overlay.id ?? overlay.day ?? 'new'} id={overlay.id} day={overlay.day} onClose={close} />;
+      return <DayOffSheet key={overlay.id ?? overlay.day ?? 'new'} id={overlay.id} day={overlay.day} teacherId={overlay.teacherId} onClose={close} />;
     case 'tax':
       return <TaxSheet key={overlay.id ?? `${overlay.taxKind}:${overlay.period}`} prefill={overlay} onClose={close} />;
     case 'taxPlan':
       return <TaxPlanSheet onClose={close} />;
     case 'bank':
       return <BankSheet key={overlay.month} month={overlay.month} onClose={close} />;
+    case 'teacher':
+      return <TeacherSheet key={overlay.id ?? 'new'} id={overlay.id} onClose={close} />;
   }
 }
 
 function TodayCard() {
-  const rec = useData((s) => s.lessons);
+  const rec = useCalendarLessons();
   const workDays = useData((s) => s.settings.workDays);
-  const off = dayOffOn(useDaysOff(), todayKey());
+  const finance = useAccess().finance;
+  const off = dayOffOn(useCalendarDaysOff(), todayKey());
   const now = useNow();
   const today = todayKey();
   const sum = summarize(lessonsByDay(rec).get(today) ?? [], null, now);
@@ -141,7 +148,7 @@ function TodayCard() {
       <div style={{ fontWeight: 800, fontSize: 17, marginTop: 2 }}>{count ? nPlural(count, LESSONS) : empty}</div>
       {count > 0 && (
         <div className="muted" style={{ fontSize: 13.5 }}>
-          {money(sum.earned + sum.expected)} · проведено {sum.done}
+          {finance && `${money(sum.earned + sum.expected)} · `}проведено {sum.done}
         </div>
       )}
     </div>

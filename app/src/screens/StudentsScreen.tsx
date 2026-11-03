@@ -16,12 +16,14 @@ import {
   Wallet,
 } from 'lucide-react';
 import { useState } from 'react';
+import { useAccess } from '../data/access';
 import { accountLabel, useAccounts, type Account } from '../data/billing';
 import { TRIAL_OUTCOMES, zoneLabel } from '../data/constants';
 import { chargeOf, isTrial } from '../data/money';
-import { lessonsOfStudent, livePayments, useLiveGroups, useLiveStudents } from '../data/selectors';
+import { lessonsOfStudent, livePayments, useCalendarTeacher, useLiveGroups, useLiveLessons, useLiveStudents, useManyTeachers, useTeachers } from '../data/selectors';
 import { monthSeries, summarize } from '../data/stats';
 import { useData } from '../data/store';
+import { teacherById, teacherOf } from '../data/teachers';
 import type { Lesson, Student, StudentStatus } from '../data/types';
 import {
   cap,
@@ -35,10 +37,11 @@ import {
   weekdayShort,
   zoneDiffers,
 } from '../lib/dates';
-import { grade1, LESSONS, money, nPlural, plural, TOPICS } from '../lib/format';
+import { grade1, LESSONS, money, nPlural, plural, STUDENTS, TOPICS } from '../lib/format';
 import { ColumnChart, GradeLine, StackBar } from '../ui/charts';
 import { Avatar, Delta, Empty, GradeMini, Money, Segmented, StatusBadge, Tile, useNow } from '../ui/components';
 import { back, navigate } from '../ui/router';
+import { TeacherFilter } from '../ui/TeacherFilter';
 import { useUi } from '../ui/uiStore';
 
 /* ---------- List ---------- */
@@ -51,8 +54,12 @@ const STATUS_FILTERS: { value: StudentStatus; label: string }[] = [
 ];
 
 export function StudentsScreen() {
-  const students = useLiveStudents();
-  const groups = useLiveGroups();
+  const access = useAccess();
+  const teacher = useCalendarTeacher();
+  const many = useManyTeachers() && access.role !== 'teacher';
+  const teachersRec = useData((s) => s.teachers);
+  const students = useLiveStudents().filter((s) => !teacher || teacherOf(s) === teacher);
+  const groups = useLiveGroups().filter((g) => !teacher || teacherOf(g) === teacher);
   const rec = useData((s) => s.lessons);
   const open = useUi((s) => s.open);
   const accounts = useAccounts();
@@ -68,11 +75,15 @@ export function StudentsScreen() {
     <div className="screen">
       <div className="screen-inner">
         <div className="screen-head">
-          <h1>Учні</h1>
-          <button className="btn btn-primary btn-sm" onClick={() => open({ kind: 'student' })}>
-            <Plus size={17} /> Учень
-          </button>
+          <h1>{access.role === 'teacher' ? 'Мої учні' : 'Учні'}</h1>
+          {access.manage && (
+            <button className="btn btn-primary btn-sm" onClick={() => open({ kind: 'student' })}>
+              <Plus size={17} /> Учень
+            </button>
+          )}
         </div>
+
+        <TeacherFilter />
 
         <div className="students-toolbar">
           <div className="search">
@@ -90,7 +101,7 @@ export function StudentsScreen() {
 
         {list.length === 0 ? (
           <Empty icon={<UserRound size={36} />} title={q ? 'Нікого не знайдено' : 'Тут поки порожньо'}>
-            {filter === 'active' && !q && (
+            {filter === 'active' && !q && access.manage && (
               <button className="btn btn-primary" style={{ marginTop: 8 }} onClick={() => open({ kind: 'student' })}>
                 Додати учня
               </button>
@@ -102,13 +113,15 @@ export function StudentsScreen() {
               const ls = lessonsOfStudent(rec, s.id);
               const m = summarize(ls, month, now, s.id);
               const a = accounts.get(s.id);
-              const label = a && s.status === 'active' && a.state !== 'new' ? accountLabel(a, s) : null;
+              const label = access.prices && a && s.status === 'active' && a.state !== 'new' ? accountLabel(a, s) : null;
               return (
                 <button key={s.id} className="student-card rise" style={{ animationDelay: `${i * 25}ms` }} onClick={() => navigate(`/students/${s.id}`)}>
                   <Avatar name={s.name} color={s.color} size={48} />
                   <div className="sc-main">
                     <div className="sc-name">{s.name}</div>
-                    <div className="sc-sub">{[s.subject, s.grade].filter(Boolean).join(' · ')}</div>
+                    <div className="sc-sub">
+                      {[s.subject, s.grade, many && !teacher ? teacherById(teachersRec, teacherOf(s)).name : ''].filter(Boolean).join(' · ')}
+                    </div>
                     {s.schedule.length > 0 && (
                       <div className="sc-slots">
                         {s.schedule.map((sl) => (
@@ -120,9 +133,11 @@ export function StudentsScreen() {
                     )}
                   </div>
                   <div className="sc-end">
-                    <div className="sc-money">
-                      <Money value={m.earned + m.expected} />
-                    </div>
+                    {access.finance && (
+                      <div className="sc-money">
+                        <Money value={m.earned + m.expected} />
+                      </div>
+                    )}
                     <div className="faint">{nPlural(m.done + m.planned, LESSONS)} за місяць</div>
                     {s.status === 'trial' && (
                       <span className="badge accent" style={{ marginTop: 4 }}>
@@ -137,20 +152,26 @@ export function StudentsScreen() {
           </div>
         )}
 
-        <div className="section-title">
-          <h2>Групи</h2>
-          <button className="link-btn" onClick={() => open({ kind: 'group' })}>
-            + Нова група
-          </button>
-        </div>
-        {groups.length === 0 ? (
-          <div className="card faint" style={{ fontSize: 14 }}>
-            Групових занять поки немає. Коли з'являться — створіть групу з учнями та розкладом, і заняття будуть у календарі.
+        {(access.manage || groups.length > 0) && (
+          <div className="section-title">
+            <h2>Групи</h2>
+            {access.manage && (
+              <button className="link-btn" onClick={() => open({ kind: 'group' })}>
+                + Нова група
+              </button>
+            )}
           </div>
+        )}
+        {groups.length === 0 ? (
+          access.manage && (
+            <div className="card faint" style={{ fontSize: 14 }}>
+              Групових занять поки немає. Коли з'являться — створіть групу з учнями та розкладом, і заняття будуть у календарі.
+            </div>
+          )
         ) : (
           <div className="list">
             {groups.map((g) => (
-              <button key={g.id} className="list-item" onClick={() => open({ kind: 'group', id: g.id })}>
+              <button key={g.id} className="list-item" disabled={!access.manage} onClick={() => open({ kind: 'group', id: g.id })}>
                 <Avatar name={g.name} color={g.color} size={40} />
                 <div className="list-main">
                   <div className="list-title">{g.name}</div>
@@ -159,7 +180,8 @@ export function StudentsScreen() {
                   </div>
                 </div>
                 <div className="list-end">
-                  <div style={{ fontWeight: 700 }}>{money(g.price)}</div>
+                  {access.prices && <div style={{ fontWeight: 700 }}>{money(g.price)}</div>}
+                  {many && !teacher && <div className="faint" style={{ fontSize: 12.5 }}>{teacherById(teachersRec, teacherOf(g)).name}</div>}
                   <div className="faint" style={{ fontSize: 12.5 }}>
                     {g.schedule.map((sl) => `${weekdayShort(sl.weekday)} ${sl.time}`).join(', ')}
                   </div>
@@ -168,8 +190,63 @@ export function StudentsScreen() {
             ))}
           </div>
         )}
+
+        {access.manage && <Teachers />}
       </div>
     </div>
+  );
+}
+
+/** The school's teachers: who teaches whom, and who may sign in. */
+function Teachers() {
+  const teachers = useTeachers();
+  const students = useLiveStudents();
+  const lessons = useLiveLessons();
+  const open = useUi((s) => s.open);
+  const week = periodRange('week', new Date());
+  return (
+    <>
+      <div className="section-title">
+        <h2>Вчительки</h2>
+        <button className="link-btn" onClick={() => open({ kind: 'teacher' })}>
+          + Вчителька
+        </button>
+      </div>
+      <div className="list">
+        {teachers.map((t) => {
+          const mine = students.filter((s) => s.status === 'active' && teacherOf(s) === t.id).length;
+          const thisWeek = lessons.filter(
+            (l) => l.status !== 'cancelled' && teacherOf(l) === t.id && l.start.slice(0, 10) >= week.from && l.start.slice(0, 10) <= week.to,
+          ).length;
+          return (
+            <button key={t.id} className="list-item" onClick={() => open({ kind: 'teacher', id: t.id })} style={t.status === 'archived' ? { opacity: 0.55 } : undefined}>
+              <Avatar name={t.name} color={t.color} size={40} />
+              <div className="list-main">
+                <div className="list-title">{t.name}</div>
+                <div className="list-sub">{t.email || 'без входу в застосунок'}</div>
+              </div>
+              <div className="list-end">
+                {t.status === 'archived' ? (
+                  <span className="badge">архів</span>
+                ) : (
+                  <>
+                    <div style={{ fontWeight: 700 }}>{nPlural(mine, STUDENTS)}</div>
+                    <div className="faint" style={{ fontSize: 12.5 }}>
+                      {thisWeek ? `${nPlural(thisWeek, LESSONS)} цього тижня` : 'цього тижня без уроків'}
+                    </div>
+                  </>
+                )}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+      {teachers.length < 2 && (
+        <p className="faint" style={{ fontSize: 13.5, marginTop: 8 }}>
+          Коли додасте другу вчительку, в учнях, групах, уроках і календарі з'явиться вибір, хто веде.
+        </p>
+      )}
+    </>
   );
 }
 
@@ -181,6 +258,9 @@ type LessonFilter = 'all' | 'unpaid' | 'cancelled' | 'moved';
 export function StudentPage({ id }: { id: string }) {
   const st = useData((s) => s.students[id]);
   const rec = useData((s) => s.lessons);
+  const teachersRec = useData((s) => s.teachers);
+  const access = useAccess();
+  const many = useManyTeachers() && access.role !== 'teacher';
   const open = useUi((s) => s.open);
   const accounts = useAccounts();
   const now = useNow();
@@ -221,9 +301,11 @@ export function StudentPage({ id }: { id: string }) {
             <ChevronLeft size={24} />
           </button>
           <span style={{ flex: 1 }} />
-          <button className="icon-btn" onClick={() => open({ kind: 'student', id })} aria-label="Редагувати">
-            <Pencil size={20} />
-          </button>
+          {access.manage && (
+            <button className="icon-btn" onClick={() => open({ kind: 'student', id })} aria-label="Редагувати">
+              <Pencil size={20} />
+            </button>
+          )}
         </div>
 
         <div className="sp-hero rise">
@@ -244,7 +326,8 @@ export function StudentPage({ id }: { id: string }) {
                   {weekdayShort(sl.weekday)} {sl.time}
                 </span>
               ))}
-              <span className="badge">{money(st.price)} / урок</span>
+              {access.prices && <span className="badge">{money(st.price)} / урок</span>}
+              {many && <span className="badge">веде {teacherById(teachersRec, teacherOf(st)).name}</span>}
               {tz && (
                 <span className="badge">
                   {zoneLabel(tz)} · зараз {timeInZone(now, tz)}
@@ -255,9 +338,11 @@ export function StudentPage({ id }: { id: string }) {
         </div>
 
         <div className="sp-actions">
-          <button className="btn btn-primary" onClick={() => open({ kind: 'newLesson', studentId: id })}>
-            <CalendarPlus size={18} /> Урок
-          </button>
+          {access.manage && (
+            <button className="btn btn-primary" onClick={() => open({ kind: 'newLesson', studentId: id })}>
+              <CalendarPlus size={18} /> Урок
+            </button>
+          )}
           {c.telegram && (
             <a className="btn btn-ghost" href={`https://t.me/${c.telegram}`} target="_blank" rel="noreferrer" aria-label="Telegram">
               <MessageCircle size={18} />
@@ -278,11 +363,15 @@ export function StudentPage({ id }: { id: string }) {
 
         {(st.status !== 'trial' || total.done > 0) && <div className="tiles four">
           <Tile label="Уроків проведено" value={total.done} sub={`з ${fmt(st.startDate, 'd MMMM yyyy')}`} />
-          <Tile
-            label="Дохід за весь час"
-            value={<Money value={total.earned} />}
-            sub={total.done ? `≈ ${money(total.avgPrice)} за урок` : '—'}
-          />
+          {access.finance ? (
+            <Tile
+              label="Дохід за весь час"
+              value={<Money value={total.earned} />}
+              sub={total.done ? `≈ ${money(total.avgPrice)} за урок` : '—'}
+            />
+          ) : (
+            <Tile label="Уроків з темою" value={total.topics} sub={total.avgGrade != null ? `засвоєння ${grade1(total.avgGrade)} з 5` : 'оцінок ще немає'} />
+          )}
           <Tile
             label={`${cap(fmt(new Date(), 'LLLL'))}`}
             value={nPlural(cur.done + cur.planned, LESSONS)}
@@ -296,7 +385,7 @@ export function StudentPage({ id }: { id: string }) {
               )
             }
           />
-          {account && payLabel && (
+          {access.prices && account && payLabel && (
             <Tile
               label={account.debt > 0 ? 'Борг' : 'Оплачено наперед'}
               value={account.debt > 0 ? money(account.debt) : nPlural(account.lessonsLeft, LESSONS)}
@@ -312,22 +401,22 @@ export function StudentPage({ id }: { id: string }) {
             value={tab}
             onChange={setTab}
             options={[
-              { value: 'overview', label: 'Огляд' },
-              { value: 'lessons', label: 'Уроки' },
-              { value: 'topics', label: 'Теми' },
-              { value: 'payments', label: 'Оплати' },
-              { value: 'notes', label: 'Нотатки' },
+              { value: 'overview' as Tab, label: 'Огляд' },
+              { value: 'lessons' as Tab, label: 'Уроки' },
+              { value: 'topics' as Tab, label: 'Теми' },
+              ...(access.prices ? [{ value: 'payments' as Tab, label: 'Оплати' }] : []),
+              { value: 'notes' as Tab, label: 'Нотатки' },
             ]}
           />
         </div>
 
         <div key={tab} className="fade">
           {tab === 'overview' && <Overview st={st} lessons={lessons} now={now} />}
-          {tab === 'lessons' && account && (
-            <LessonHistory st={st} lessons={lessons} now={now} filter={filter} setFilter={setFilter} account={account} />
+          {tab === 'lessons' && (
+            <LessonHistory st={st} lessons={lessons} now={now} filter={filter} setFilter={setFilter} account={access.prices ? account : undefined} />
           )}
           {tab === 'topics' && <Topics st={st} lessons={lessons} now={now} />}
-          {tab === 'payments' && account && <Payments st={st} account={account} />}
+          {tab === 'payments' && access.prices && account && <Payments st={st} account={account} />}
           {tab === 'notes' && <Notes st={st} />}
         </div>
       </div>
@@ -421,7 +510,7 @@ function Overview({ st, lessons, now }: { st: Student; lessons: Lesson[]; now: s
           parts={[
             { key: 'done', label: 'Проведено', value: total.done, color: 'var(--good)' },
             { key: 'cs', label: 'Скасовано учнем', value: total.cancelledByStudent, color: 'var(--bad)' },
-            { key: 'ct', label: 'Скасовано мною', value: total.cancelledByTeacher, color: 'var(--text-3)' },
+            { key: 'ct', label: 'Скасовано вчителькою', value: total.cancelledByTeacher, color: 'var(--text-3)' },
           ]}
         />
       </div>
@@ -449,16 +538,18 @@ function LessonHistory({
   now: string;
   filter: LessonFilter;
   setFilter: (f: LessonFilter) => void;
-  account: Account;
+  /** missing for those who don't see money */
+  account?: Account;
 }) {
   const groups = useData((s) => s.groups);
   const open = useUi((s) => s.open);
+  const finance = useAccess().finance;
 
   const past = lessons
     .filter((l) => l.start <= now || l.status !== 'planned')
     .filter((l) => {
       const p = l.participants.find((x) => x.studentId === st.id);
-      if (filter === 'unpaid') return !!p && chargeOf(l, p) > 0 && !account.covered.has(l.id);
+      if (filter === 'unpaid') return !!account && !!p && chargeOf(l, p) > 0 && !account.covered.has(l.id);
       if (filter === 'cancelled') return l.status === 'cancelled';
       if (filter === 'moved') return l.moves.length > 0;
       return true;
@@ -477,7 +568,7 @@ function LessonHistory({
   return (
     <>
       <div className="chips" style={{ marginBottom: 12 }}>
-        {FILTERS.map((f) => (
+        {FILTERS.filter((f) => account || f.value !== 'unpaid').map((f) => (
           <button key={f.value} className="chip sm" aria-pressed={filter === f.value} onClick={() => setFilter(f.value)}>
             {f.label}
           </button>
@@ -491,14 +582,15 @@ function LessonHistory({
             <div className="month-head">
               <span>{cap(fmt(parseISO(`${k}-01`), 'LLLL yyyy'))}</span>
               <span className="faint">
-                {nPlural(sum.done, LESSONS)} · {money(sum.earned)}
+                {nPlural(sum.done, LESSONS)}
+                {finance && ` · ${money(sum.earned)}`}
               </span>
             </div>
             <div className="list">
               {ls.map((l) => {
                 const p = l.participants.find((x) => x.studentId === st.id);
                 const charged = p ? chargeOf(l, p) > 0 : false;
-                const paid = account.covered.has(l.id);
+                const paid = !!account?.covered.has(l.id);
                 return (
                   <button key={l.id} className="list-item" onClick={() => open({ kind: 'lesson', id: l.id })}>
                     <span className="date-chip">
@@ -527,7 +619,7 @@ function LessonHistory({
                         <GradeMini value={p?.grade} />
                       </div>
                     </div>
-                    {p && !isTrial(l) && (
+                    {account && p && !isTrial(l) && (
                       <div className="list-end">
                         <div style={{ fontWeight: 750, color: charged ? undefined : 'var(--text-3)' }}>{money(p.price)}</div>
                         {charged && <span className={paid ? 'paid-dot ok' : 'paid-dot'}>{paid ? 'оплачено' : 'не оплачено'}</span>}
@@ -680,10 +772,11 @@ function Payments({ st, account }: { st: Student; account: Account }) {
 function Notes({ st }: { st: Student }) {
   const addNote = useData((s) => s.addNote);
   const deleteNote = useData((s) => s.deleteNote);
+  const manage = useAccess().manage;
   const [text, setText] = useState('');
   return (
     <>
-      <div className="card">
+      {manage && <div className="card">
         <textarea
           className="textarea"
           rows={3}
@@ -703,7 +796,7 @@ function Notes({ st }: { st: Student }) {
         >
           Зберегти нотатку
         </button>
-      </div>
+      </div>}
       {st.notes.length === 0 ? (
         <Empty title="Нотаток поки немає" />
       ) : (
@@ -712,9 +805,11 @@ function Notes({ st }: { st: Student }) {
             <div key={n.id} className="note">
               <div className="note-date">{fmt(n.date, 'd MMMM yyyy')}</div>
               <div className="note-text">{n.text}</div>
-              <button className="icon-btn" onClick={() => deleteNote(st.id, n.id)} aria-label="Видалити нотатку">
-                <Trash2 size={16} />
-              </button>
+              {manage && (
+                <button className="icon-btn" onClick={() => deleteNote(st.id, n.id)} aria-label="Видалити нотатку">
+                  <Trash2 size={16} />
+                </button>
+              )}
             </div>
           ))}
         </div>
