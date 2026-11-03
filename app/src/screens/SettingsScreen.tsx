@@ -8,6 +8,7 @@ import { LESSONS, nPlural } from '../lib/format';
 import { BillingPicker, DurationChips, PriceField } from '../ui/fields';
 import { ask, useUi } from '../ui/uiStore';
 import { AccountSection } from './AccountSection';
+import { MembersSection } from './MembersSection';
 import { SyncSection } from './SyncSection';
 import { useSync } from '../data/sync';
 
@@ -163,6 +164,7 @@ export function SettingsScreen() {
         </section>
 
         <AccountSection />
+        <MembersSection />
         {!onAccount && <SyncSection />}
 
         <section className="section card">

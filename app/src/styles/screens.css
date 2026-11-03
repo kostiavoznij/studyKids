@@ -1938,6 +1938,31 @@
   color: var(--warn);
 }
 
+/* ---------- Access (members) ---------- */
+
+.members .badge {
+  flex: none;
+}
+
+.member-form {
+  padding: 14px;
+  background: var(--surface-2);
+}
+
+.list-item + .member-form,
+.member-form + .list-item {
+  border-top: 1px solid var(--border);
+}
+
+.member-form-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 14px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 /* ---------- Sign-in screen ---------- */
 
 .lock {

@@ -22,16 +22,26 @@
 
 ## Додати людину
 
-1. У Google Cloud Console → Google Auth Platform → **Audience → Test users** додати її Gmail
-   (поки застосунок у режимі Testing, Google пускає лише ці пошти).
-2. Внести в `members`:
+У застосунку: **Налаштування → Доступ → «Додати пошту»** (бачить лише адміністратор). Там же
+змінюють роль та ім'я або забирають доступ. Список живе в таблиці `members`; змінювати його можна
+лише через функції `set_member()` / `remove_member()`, які перевіряють, що це робить адміністратор.
+Адміністратор не може забрати доступ у себе чи зняти з себе права — це робить інший адміністратор,
+тож застосунок не лишиться без жодного.
+
+Ролі: `admin` — бачить і змінює все; `teacher` — поки лише вхід («кабінет у розробці»),
+до записів доступу немає.
+
+Поки вхід Google у режимі **Testing**, Google пускає лише пошти зі списку
+Google Cloud Console → Google Auth Platform → **Audience → Test users**. Нову пошту треба додати
+і туди, інакше Google не дасть увійти ще до перевірки доступу в застосунку.
+
+Якщо доступ загублено (наприклад, видалено всіх адміністраторів напряму в базі), повернути його можна командою:
 
 ```bash
 npx supabase db query --remote=cecjmzwrrcerltreifsu --yes \
-  "insert into public.members (email, role, name) values ('пошта@gmail.com', 'admin', 'Ім''я')"
+  "insert into public.members (email, role, name) values ('пошта@gmail.com', 'admin', 'Ім''я')
+   on conflict (email) do update set role = 'admin'"
 ```
-
-Прибрати доступ — `delete from public.members where email = '…'`.
 
 ## Змінити базу
 

@@ -142,6 +142,40 @@ export async function retryAccount() {
   else useAccount.setState({ status: 'out' });
 }
 
+/** Someone allowed into the app (Налаштування → Доступ). */
+export interface Member {
+  email: string;
+  role: Role;
+  name: string;
+  createdAt: string;
+  /** null until the person has signed in for the first time */
+  lastSignInAt: string | null;
+}
+
+/** The server explains refusals itself (in Ukrainian); anything else is most likely the connection. */
+function failure(error: { message: string; code?: string }): Error {
+  if (error.code === '42501' || error.code === '22023') return new Error(error.message);
+  if (!navigator.onLine) return new Error('Немає інтернету');
+  return new Error(`Не вдалося зв'язатися з сервером: ${error.message}`);
+}
+
+export async function listMembers(): Promise<Member[]> {
+  const { data, error } = await cloud().rpc('list_members');
+  if (error) throw failure(error);
+  return (data ?? []) as Member[];
+}
+
+/** Gives the e-mail access, or changes the role and name of someone already listed. */
+export async function saveMember(email: string, role: Role, name: string) {
+  const { error } = await cloud().rpc('set_member', { member_email: email, member_role: role, member_name: name });
+  if (error) throw failure(error);
+}
+
+export async function removeMember(email: string) {
+  const { error } = await cloud().rpc('remove_member', { member_email: email });
+  if (error) throw failure(error);
+}
+
 /** Live records of each type on the server, to compare with this device. */
 export async function serverCounts(): Promise<Record<string, number>> {
   const { data, error } = await cloud().rpc('record_counts');
