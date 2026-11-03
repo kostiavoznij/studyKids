@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useUi } from '../ui/uiStore';
 import { ROLE_COLOR, useAccess, usePreviewing } from './access';
-import { cloudEnabled, useAccount, type Role } from './cloud';
+import { cloudEnabled, useAccount, useManagers, type Role } from './cloud';
 import { withCorrections } from './bank';
 import { colorHex } from './constants';
 import { useData } from './store';
@@ -165,10 +165,12 @@ export function useMe(): Me | null {
   const account = useAccount();
   const preview = usePreviewing();
   const teachers = useData((s) => s.teachers);
+  const managers = useManagers((s) => s.list);
   if (!cloudEnabled || account.status !== 'in' || !account.role) return null;
   if (preview) {
     const card = preview.role === 'teacher' ? teachers[preview.teacherId ?? ''] : undefined;
-    const name = preview.role === 'teacher' ? (card?.name ?? 'Вчителька') : 'Менеджер';
+    const manager = managers.find((m) => m.email === preview.managerEmail);
+    const name = preview.role === 'teacher' ? (card?.name ?? 'Вчителька') : manager?.name || manager?.email || 'Менеджер';
     return { name, email: '', role: preview.role, color: card?.color ?? ROLE_COLOR[preview.role], previewing: true };
   }
   const email = account.email ?? '';

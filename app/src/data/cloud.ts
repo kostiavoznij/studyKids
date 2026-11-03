@@ -66,6 +66,50 @@ function initialAccount(): AccountState {
 
 export const useAccount = create<AccountState>(initialAccount);
 
+/*
+ * The managers from Налаштування → Доступ, so «Дивитися як» offers each of them
+ * by name, and nothing when there are none. Only an admin may read the list; the
+ * last one is kept on the device so the menu works offline too.
+ */
+
+export interface ManagerRef {
+  email: string;
+  name: string;
+}
+
+const MANAGERS = 'uroky-managers';
+
+function storedManagers(): ManagerRef[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(MANAGERS) ?? '[]');
+    return Array.isArray(v) ? v : [];
+  } catch {
+    return [];
+  }
+}
+
+export const useManagers = create<{ list: ManagerRef[] }>(() => ({ list: storedManagers() }));
+
+/** Keeps the managers of a freshly loaded members list. */
+export function rememberManagers(members: Member[]) {
+  const list = members.filter((m) => m.role === 'manager').map((m) => ({ email: m.email, name: m.name }));
+  try {
+    localStorage.setItem(MANAGERS, JSON.stringify(list));
+  } catch {
+    /* private window: the list lives until reload */
+  }
+  useManagers.setState({ list });
+}
+
+function forgetManagers() {
+  try {
+    localStorage.removeItem(MANAGERS);
+  } catch {
+    /* nothing kept */
+  }
+  useManagers.setState({ list: [] });
+}
+
 async function checkRole(email: string) {
   const { data, error } = await cloud().rpc('my_role');
   if (error) {
@@ -83,7 +127,15 @@ async function checkRole(email: string) {
     }
     localStorage.setItem(REMEMBERED, JSON.stringify({ email, role: data, name }));
     useAccount.setState({ status: 'in', email, role: data, name, error: undefined });
+    if (data === 'admin') {
+      listMembers()
+        .then(rememberManagers)
+        .catch(() => {
+          /* offline: the last list stays */
+        });
+    } else forgetManagers();
   } else {
+    forgetManagers();
     localStorage.removeItem(REMEMBERED);
     useAccount.setState({ status: 'denied', email, role: undefined, name: undefined, error: undefined });
   }
@@ -138,6 +190,7 @@ export async function signIn() {
 
 export async function signOut() {
   localStorage.removeItem(REMEMBERED);
+  forgetManagers();
   await cloud().auth.signOut({ scope: 'local' });
   useAccount.setState({ status: 'out', email: undefined, role: undefined, error: undefined });
 }

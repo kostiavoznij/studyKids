@@ -1,7 +1,7 @@
 import { KeyRound, RefreshCw, Trash2, UserPlus } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { useAccess } from '../data/access';
-import { listMembers, removeMember, saveMember, useAccount, type Member, type MemberRole } from '../data/cloud';
+import { listMembers, rememberManagers, removeMember, saveMember, useAccount, type Member, type MemberRole } from '../data/cloud';
 import { fmt } from '../lib/dates';
 import { Avatar, Segmented } from '../ui/components';
 import { ask, useUi } from '../ui/uiStore';
@@ -49,7 +49,9 @@ function Members({ me }: { me: string }) {
   const load = useCallback(async () => {
     setError(undefined);
     try {
-      setList(await listMembers());
+      const members = await listMembers();
+      setList(members);
+      rememberManagers(members);
     } catch (e) {
       setError(errorText(e));
     }

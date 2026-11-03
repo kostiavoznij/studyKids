@@ -1,7 +1,7 @@
 import { Check, ChevronsUpDown, Eye, Settings } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { canPreview, ROLE_COLOR, ROLE_LABEL, startPreview, stopPreview, usePreviewing } from '../data/access';
-import { cloudEnabled, useAccount } from '../data/cloud';
+import { cloudEnabled, useAccount, useManagers } from '../data/cloud';
 import { useActiveTeachers, useMe } from '../data/selectors';
 import { Avatar } from './components';
 import { navigate } from './router';
@@ -27,20 +27,24 @@ function useViews(): View[] {
   const account = useAccount();
   const preview = usePreviewing();
   const teachers = useActiveTeachers();
+  const managers = useManagers((s) => s.list);
   const real = account.role;
   if (!cloudEnabled || account.status !== 'in' || !real || real === 'teacher') return [];
   const views: View[] = [
     { key: 'me', name: account.name || account.email || 'Я', sub: ROLE_LABEL[real], color: ROLE_COLOR[real], active: !preview, pick: stopPreview },
   ];
+  // Only the managers really added in Доступ — none there, none here.
   if (canPreview(real, 'manager')) {
-    views.push({
-      key: 'manager',
-      name: 'Менеджер',
-      sub: 'без фінансів і доступу',
-      color: ROLE_COLOR.manager,
-      active: preview?.role === 'manager',
-      pick: () => startPreview('manager'),
-    });
+    for (const m of managers) {
+      views.push({
+        key: `m:${m.email}`,
+        name: m.name || m.email,
+        sub: 'менеджер',
+        color: ROLE_COLOR.manager,
+        active: preview?.role === 'manager' && preview.managerEmail === m.email,
+        pick: () => startPreview('manager', m.email),
+      });
+    }
   }
   for (const t of teachers) {
     views.push({
@@ -155,8 +159,7 @@ export function PreviewBanner() {
       <Eye size={18} />
       <span>
         <span className="preview-who">
-          Перегляд: <b>{me.role === 'teacher' ? me.name : 'менеджер'}</b>
-          {me.role === 'teacher' && ' · вчителька'}
+          Перегляд: <b>{me.name}</b> · {ROLE_LABEL[me.role]}
         </span>
         <small>Зміни зберігаються</small>
       </span>

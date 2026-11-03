@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { cloudEnabled, useAccount, type Role } from './cloud';
+import { cloudEnabled, useAccount, useManagers, type Role } from './cloud';
 import type { ID } from './types';
 
 /*
@@ -40,7 +40,7 @@ export const currentRole = (): Role => (cloudEnabled ? useAccount.getState().rol
 export const accessFor = (role: Role): Access => ACCESS[role];
 
 /*
- * «Подивитися очима»: an admin looks at the app as a manager or as one of the
+ * «Подивитися очима»: an admin looks at the app as one of the managers or the
  * teachers, a manager as a teacher — without signing out. Only the screens
  * change: the data on the device and the rights on the server stay the real
  * role's, so whatever is changed during a preview is really changed. Ends on
@@ -51,6 +51,8 @@ interface Preview {
   role?: Role;
   /** whose eyes, when looking as a teacher */
   teacherId?: ID;
+  /** whose eyes, when looking as a manager (all managers see the same; this is for the name) */
+  managerEmail?: string;
 }
 
 export const usePreview = create<Preview>(() => ({}));
@@ -64,11 +66,18 @@ const realRole = (role: Role | undefined): Role => (cloudEnabled ? role ?? 'admi
 
 export const canPreview = (real: Role, role: Role) => RANK[role] < RANK[real];
 
-export function startPreview(role: Role, teacherId?: ID) {
-  usePreview.setState({ role, teacherId: role === 'teacher' ? teacherId : undefined });
+/** `who` is the teacher's card id, or the manager's e-mail. */
+export function startPreview(role: Role, who?: string) {
+  usePreview.setState({ role, teacherId: role === 'teacher' ? who : undefined, managerEmail: role === 'manager' ? who : undefined });
 }
 
-export const stopPreview = () => usePreview.setState({ role: undefined, teacherId: undefined });
+export const stopPreview = () => usePreview.setState({ role: undefined, teacherId: undefined, managerEmail: undefined });
+
+// A manager taken out of Доступ can't be looked through any more.
+useManagers.subscribe(({ list }) => {
+  const p = usePreview.getState();
+  if (p.role === 'manager' && !list.some((m) => m.email === p.managerEmail)) stopPreview();
+});
 
 useAccount.subscribe((a, prev) => {
   if (a.email !== prev.email || a.role !== prev.role || a.status !== prev.status) stopPreview();
@@ -87,7 +96,7 @@ export function usePreviewing(): Required<Pick<Preview, 'role'>> & Preview | nul
   const preview = usePreview();
   const real = realRole(role);
   const shown = effective(real, preview);
-  return shown === real ? null : { role: shown, teacherId: preview.teacherId };
+  return shown === real ? null : { role: shown, teacherId: preview.teacherId, managerEmail: preview.managerEmail };
 }
 
 export const ROLE_LABEL: Record<Role, string> = { admin: 'адміністратор', manager: 'менеджер', teacher: 'вчителька' };
