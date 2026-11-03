@@ -1,4 +1,4 @@
-import { Eye, X } from 'lucide-react';
+import { Eye } from 'lucide-react';
 import { canPreview, ROLE_LABEL, startPreview, stopPreview, usePreviewing } from '../data/access';
 import { useAccount, type Role } from '../data/cloud';
 import { useActiveTeachers, useMe } from '../data/selectors';
@@ -46,10 +46,14 @@ export function PreviewBanner() {
     <div className="preview-banner" role="status">
       <Eye size={18} />
       <span>
-        Ви дивитесь очима: <b>{me.role === 'teacher' ? `${me.name} (вчителька)` : 'менеджер'}</b>. Дані справжні — зміни зберігаються.
+        <span className="preview-who">
+          Перегляд: <b>{me.role === 'teacher' ? me.name : 'менеджер'}</b>
+          {me.role === 'teacher' && ' · вчителька'}
+        </span>
+        <small>Зміни зберігаються</small>
       </span>
       <button className="btn btn-sm btn-primary" onClick={stopPreview}>
-        <X size={15} /> Повернутися
+        Повернутися
       </button>
     </div>
   );

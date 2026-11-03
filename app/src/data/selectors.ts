@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useUi } from '../ui/uiStore';
-import { ROLE_LABEL, useAccess, usePreviewing } from './access';
+import { useAccess, usePreviewing } from './access';
 import { cloudEnabled, useAccount, type Role } from './cloud';
 import { withCorrections } from './bank';
 import { colorHex } from './constants';
@@ -174,8 +174,6 @@ export function useMe(): Me | null {
   return { name: account.name || card?.name || email, email, role: account.role, previewing: false };
 }
 
-export const roleLabel = (r: Role) => ROLE_LABEL[r];
-
 const byTeacherCache = new WeakMap<object, Map<ID, Record<ID, Lesson>>>();
 /** The same records, only one teacher's; cached so the per-record caches above keep working. */
 export function lessonsOfTeacher(rec: Record<ID, Lesson>, teacher: ID | null): Record<ID, Lesson> {
@@ -192,6 +190,34 @@ export function lessonsOfTeacher(rec: Record<ID, Lesson>, teacher: ID | null): R
 }
 
 export const useCalendarLessons = () => lessonsOfTeacher(useData((s) => s.lessons), useCalendarTeacher());
+
+/** Whose eyes the screens are looking through, when it is a teacher's. */
+export function usePreviewTeacher(): ID | null {
+  const preview = usePreviewing();
+  return preview?.role === 'teacher' && preview.teacherId ? preview.teacherId : null;
+}
+
+/**
+ * The lessons a student's numbers are counted from. Looking through a teacher's
+ * eyes: only hers, because her phone gets nothing else from the server.
+ */
+export const useSeenLessons = () => lessonsOfTeacher(useData((s) => s.lessons), usePreviewTeacher());
+
+const inLessonsCache = new WeakMap<object, { students: Set<ID>; groups: Set<ID> }>();
+/** Students and groups that appear in these lessons. */
+export function peopleIn(rec: Record<ID, Lesson>) {
+  let out = inLessonsCache.get(rec);
+  if (!out) {
+    out = { students: new Set(), groups: new Set() };
+    for (const l of Object.values(rec)) {
+      if (l.deletedAt) continue;
+      for (const p of l.participants) out.students.add(p.studentId);
+      if (l.groupId) out.groups.add(l.groupId);
+    }
+    inLessonsCache.set(rec, out);
+  }
+  return out;
+}
 
 /**
  * Days off that make a whole calendar day a day off. For one teacher: hers and

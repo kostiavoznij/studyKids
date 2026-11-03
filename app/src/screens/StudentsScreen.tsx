@@ -20,7 +20,19 @@ import { useAccess } from '../data/access';
 import { accountLabel, useAccounts, type Account } from '../data/billing';
 import { TRIAL_OUTCOMES, zoneLabel } from '../data/constants';
 import { chargeOf, isTrial } from '../data/money';
-import { lessonsOfStudent, livePayments, useCalendarTeacher, useLiveGroups, useLiveLessons, useLiveStudents, useManyTeachers, useTeachers } from '../data/selectors';
+import {
+  lessonsOfStudent,
+  livePayments,
+  peopleIn,
+  useCalendarTeacher,
+  useLiveGroups,
+  useLiveLessons,
+  useLiveStudents,
+  useManyTeachers,
+  usePreviewTeacher,
+  useSeenLessons,
+  useTeachers,
+} from '../data/selectors';
 import { monthSeries, summarize } from '../data/stats';
 import { useData } from '../data/store';
 import { teacherById, teacherOf } from '../data/teachers';
@@ -58,9 +70,11 @@ export function StudentsScreen() {
   const teacher = useCalendarTeacher();
   const many = useManyTeachers() && access.role !== 'teacher';
   const teachersRec = useData((s) => s.teachers);
-  const students = useLiveStudents().filter((s) => !teacher || teacherOf(s) === teacher);
-  const groups = useLiveGroups().filter((g) => !teacher || teacherOf(g) === teacher);
-  const rec = useData((s) => s.lessons);
+  const rec = useSeenLessons();
+  // Through a teacher's eyes also the ones she only teaches now and then: her phone gets them too.
+  const met = usePreviewTeacher() ? peopleIn(rec) : null;
+  const students = useLiveStudents().filter((s) => !teacher || teacherOf(s) === teacher || !!met?.students.has(s.id));
+  const groups = useLiveGroups().filter((g) => !teacher || teacherOf(g) === teacher || !!met?.groups.has(g.id));
   const open = useUi((s) => s.open);
   const accounts = useAccounts();
   const now = useNow();
@@ -262,7 +276,7 @@ type LessonFilter = 'all' | 'unpaid' | 'cancelled' | 'moved';
 
 export function StudentPage({ id }: { id: string }) {
   const st = useData((s) => s.students[id]);
-  const rec = useData((s) => s.lessons);
+  const rec = useSeenLessons();
   const teachersRec = useData((s) => s.teachers);
   const access = useAccess();
   const many = useManyTeachers() && access.role !== 'teacher';
