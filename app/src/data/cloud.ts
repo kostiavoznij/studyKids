@@ -37,6 +37,8 @@ interface AccountState {
   status: AccountStatus;
   email?: string;
   role?: Role;
+  /** the name an admin gave this person in Налаштування → Доступ (a teacher's name is on her card) */
+  name?: string;
   error?: string;
 }
 
@@ -44,7 +46,7 @@ const REMEMBERED = 'uroky-account';
 /** Set before leaving for Google, so the app knows to show the account after coming back. */
 const RETURNING = 'uroky-signing-in';
 
-function remembered(): { email: string; role: Role } | null {
+function remembered(): { email: string; role: Role; name?: string } | null {
   try {
     return JSON.parse(localStorage.getItem(REMEMBERED) ?? 'null');
   } catch {
@@ -59,7 +61,7 @@ function remembered(): { email: string; role: Role } | null {
 function initialAccount(): AccountState {
   if (!cloudEnabled) return { status: 'off' };
   const last = remembered();
-  return last ? { status: 'in', email: last.email, role: last.role } : { status: 'loading' };
+  return last ? { status: 'in', email: last.email, role: last.role, name: last.name } : { status: 'loading' };
 }
 
 export const useAccount = create<AccountState>(initialAccount);
@@ -68,16 +70,22 @@ async function checkRole(email: string) {
   const { data, error } = await cloud().rpc('my_role');
   if (error) {
     const last = remembered();
-    if (last?.email === email) useAccount.setState({ status: 'in', email, role: last.role, error: undefined });
+    if (last?.email === email) useAccount.setState({ status: 'in', email, role: last.role, name: last.name, error: undefined });
     else useAccount.setState({ status: 'error', email, error: error.message });
     return;
   }
   if (data === 'admin' || data === 'manager' || data === 'teacher') {
-    localStorage.setItem(REMEMBERED, JSON.stringify({ email, role: data }));
-    useAccount.setState({ status: 'in', email, role: data, error: undefined });
+    // Everyone may read their own row of the members list; a teacher has none.
+    let name = '';
+    if (data !== 'teacher') {
+      const me = await cloud().from('members').select('name').eq('email', email).maybeSingle();
+      name = (me.data as { name?: string } | null)?.name ?? remembered()?.name ?? '';
+    }
+    localStorage.setItem(REMEMBERED, JSON.stringify({ email, role: data, name }));
+    useAccount.setState({ status: 'in', email, role: data, name, error: undefined });
   } else {
     localStorage.removeItem(REMEMBERED);
-    useAccount.setState({ status: 'denied', email, role: undefined, error: undefined });
+    useAccount.setState({ status: 'denied', email, role: undefined, name: undefined, error: undefined });
   }
 }
 

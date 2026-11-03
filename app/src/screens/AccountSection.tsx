@@ -1,6 +1,7 @@
 import { LogIn, LogOut, RefreshCw, UserRound } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { ROLE_LABEL } from '../data/access';
+import { PreviewPicker } from '../ui/AccountChip';
 import { retryAccount, serverCounts, signIn, signOut, useAccount, type Role } from '../data/cloud';
 import { useData, type DataState } from '../data/store';
 import { disconnect, moveToCloud, syncNow, useSync } from '../data/sync';
@@ -95,7 +96,7 @@ export function AccountSection() {
       </>
     );
   } else {
-    body = <SignedIn email={account.email ?? ''} role={account.role ?? 'admin'} />;
+    body = <SignedIn email={account.email ?? ''} name={account.name ?? ''} role={account.role ?? 'admin'} />;
   }
 
   return (
@@ -108,7 +109,7 @@ export function AccountSection() {
   );
 }
 
-function SignedIn({ email, role }: { email: string; role: Role }) {
+function SignedIn({ email, name, role }: { email: string; name: string; role: Role }) {
   const sync = useSync();
   const local = useData();
   const clearAll = useData((s) => s.clearAll);
@@ -145,7 +146,7 @@ function SignedIn({ email, role }: { email: string; role: Role }) {
   return (
     <>
       <p className="muted" style={{ fontSize: 14, marginBottom: 10 }}>
-        Ви увійшли як <b>{email}</b> · {ROLE_LABEL[role]}
+        Ви увійшли як <b>{name ? `${name} (${email})` : email}</b> · {ROLE_LABEL[role]}
       </p>
       {role === 'teacher' && (
         <p className="muted" style={{ fontSize: 14, marginBottom: 10 }}>
@@ -153,6 +154,7 @@ function SignedIn({ email, role }: { email: string; role: Role }) {
         </p>
       )}
       <SyncStatusLine />
+      <PreviewPicker />
       {role === 'admin' && <table className="account-counts">
         <thead>
           <tr>

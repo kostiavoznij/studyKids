@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 import { useAccess, type Access } from './data/access';
 import { cloudEnabled, useAccount } from './data/cloud';
 import { dayOffLabel } from './data/constants';
-import { dayOffOn, lessonsByDay, useCalendarDaysOff, useCalendarLessons, useMissingTaxes } from './data/selectors';
+import { dayOffOn, lessonsByDay, useCalendarDaysOff, useCalendarLessons, useMe, useMissingTaxes } from './data/selectors';
 import { summarize } from './data/stats';
 import { useData } from './data/store';
 import { isoWeekday, todayKey } from './lib/dates';
@@ -26,6 +26,7 @@ import { TaxSheet } from './screens/TaxSheet';
 import { PayoutSheet } from './screens/PayoutSheet';
 import { TeacherSheet } from './screens/TeacherSheet';
 import { TeacherStatsScreen } from './screens/TeacherStatsScreen';
+import { AccountChip, MeAvatar, PreviewBanner } from './ui/AccountChip';
 import { ConfirmHost, ToastHost, useNow } from './ui/components';
 import { useRoute } from './ui/router';
 import { useUi } from './ui/uiStore';
@@ -56,6 +57,7 @@ export function App() {
 function Shell() {
   const { path, parts } = useRoute();
   const access = useAccess();
+  const me = useMe();
   const taxesDue = useMissingTaxes().length > 0 && access.finance;
   const nav = NAV.filter((n) => n.shown(access));
 
@@ -83,15 +85,19 @@ function Shell() {
             {n.href === '/finance' && taxesDue && <i className="nav-dot" aria-label="Не внесено податок" />}
           </a>
         ))}
+        <AccountChip />
         <TodayCard />
       </aside>
 
-      <main className="main">{screen}</main>
+      <main className="main">
+        <PreviewBanner />
+        {screen}
+      </main>
 
       <nav className="tabbar">
         {nav.map((n) => (
           <a key={n.href} className="tab" href={`#${n.href}`} aria-current={n.match(path) ? 'page' : undefined}>
-            <n.icon size={23} strokeWidth={2.1} />
+            {n.href === '/settings' && me ? <MeAvatar /> : <n.icon size={23} strokeWidth={2.1} />}
             {n.label === 'Налаштування' ? 'Ще' : n.label}
             {n.href === '/finance' && taxesDue && <i className="nav-dot" aria-label="Не внесено податок" />}
           </a>

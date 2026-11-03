@@ -1,5 +1,6 @@
 import { KeyRound, RefreshCw, Trash2, UserPlus } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
+import { useAccess } from '../data/access';
 import { listMembers, removeMember, saveMember, useAccount, type Member, type MemberRole } from '../data/cloud';
 import { fmt } from '../lib/dates';
 import { Avatar, Segmented } from '../ui/components';
@@ -33,7 +34,9 @@ const lastSeen = (m: Member) => (m.lastSignInAt ? `останній вхід ${f
 
 export function MembersSection() {
   const account = useAccount();
-  if (account.status !== 'in' || account.role !== 'admin') return null;
+  // Hidden while an admin looks through a manager's or a teacher's eyes, as it is for them.
+  const members = useAccess().members;
+  if (account.status !== 'in' || account.role !== 'admin' || !members) return null;
   return <Members me={account.email ?? ''} />;
 }
 

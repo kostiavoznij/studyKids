@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useUi } from '../ui/uiStore';
-import { useAccess } from './access';
+import { ROLE_LABEL, useAccess, usePreviewing } from './access';
+import { cloudEnabled, useAccount, type Role } from './cloud';
 import { withCorrections } from './bank';
 import { colorHex } from './constants';
 import { useData } from './store';
@@ -141,9 +142,39 @@ export function useCalendarTeacher(): ID | null {
   const chosen = useUi((s) => s.teacher);
   const active = useActiveTeachers();
   const role = useAccess().role;
+  const preview = usePreviewing();
+  // Looking through a teacher's eyes on the school's device: only her lessons, as on her own phone.
+  if (preview?.role === 'teacher' && preview.teacherId) return preview.teacherId;
   if (role === 'teacher' || active.length < 2 || !active.some((t) => t.id === chosen)) return null;
   return chosen;
 }
+
+export interface Me {
+  /** what to call whoever the screens are showing */
+  name: string;
+  email: string;
+  role: Role;
+  /** looking through someone else's eyes */
+  previewing: boolean;
+}
+
+/** Who the app is showing itself to: the signed-in person, or the role being previewed. */
+export function useMe(): Me | null {
+  const account = useAccount();
+  const preview = usePreviewing();
+  const teachers = useData((s) => s.teachers);
+  if (!cloudEnabled || account.status !== 'in' || !account.role) return null;
+  if (preview) {
+    const name = preview.role === 'teacher' ? (teachers[preview.teacherId ?? '']?.name ?? 'Вчителька') : 'Менеджер';
+    return { name, email: '', role: preview.role, previewing: true };
+  }
+  const email = account.email ?? '';
+  // A teacher has no row in the members list; her name is on her card.
+  const card = account.role === 'teacher' ? Object.values(teachers).find((t) => t.email === email) : undefined;
+  return { name: account.name || card?.name || email, email, role: account.role, previewing: false };
+}
+
+export const roleLabel = (r: Role) => ROLE_LABEL[r];
 
 const byTeacherCache = new WeakMap<object, Map<ID, Record<ID, Lesson>>>();
 /** The same records, only one teacher's; cached so the per-record caches above keep working. */
