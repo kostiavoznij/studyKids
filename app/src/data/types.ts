@@ -331,3 +331,21 @@ export interface Settings {
   horizonWeeks: number;
   calendarView: CalendarView;
 }
+
+/** What a bot message is about. */
+export type BotKind = 'cancel' | 'cancelMany' | 'free';
+
+/**
+ * A text the bot sends families. The built-in ones have the ids 'cancel' and
+ * 'cancelMany' and exist as records only once edited (until then the default
+ * text applies); her own ones ('free') have random ids and a name.
+ */
+export interface BotTemplate {
+  id: ID;
+  kind: BotKind;
+  name: string;
+  text: string;
+  createdAt: number;
+  updatedAt: number;
+  deletedAt?: number;
+}

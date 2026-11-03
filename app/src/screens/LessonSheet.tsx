@@ -20,11 +20,12 @@ import { useAccess } from '../data/access';
 import { potLabel, useAccounts } from '../data/billing';
 import { CANCEL_REASONS, MOVE_REASONS, TRIAL_LEVELS, TRIAL_OUTCOMES, zoneLabel } from '../data/constants';
 import { chargeOf, isTrial, plannedOf } from '../data/money';
+import { offerNotify } from '../data/bot';
 import { lessonColor, lessonsByDay, lessonTitle, useManyTeachers } from '../data/selectors';
 import { useData } from '../data/store';
 import { teacherById, teacherOf } from '../data/teachers';
 import type { Initiator, Lesson } from '../data/types';
-import { dayKey, endStamp, longDay, minutesOf, shortDay, timeInZone, timeOf, todayKey, zoneDiffers } from '../lib/dates';
+import { dayKey, endStamp, longDay, minutesOf, nowStamp, shortDay, timeInZone, timeOf, todayKey, zoneDiffers } from '../lib/dates';
 import { money } from '../lib/format';
 import { Avatar, GradePicker, Segmented, Sheet, StatusBadge, Switch, useNow } from '../ui/components';
 import { DraftField, DurationChips } from '../ui/fields';
@@ -683,6 +684,8 @@ function CancelStep({ lesson, onDone, onMove }: { lesson: Lesson; onDone: () => 
     cancelLesson(lesson.id, { by, reason: reason.trim(), charged });
     notify('Урок скасовано', () => putLesson(before));
     onDone();
+    // The family cancelled it themselves, or it's already over: nobody to tell.
+    if (by === 'teacher' && lesson.start > nowStamp()) offerNotify({ mode: 'cancel', lessonIds: [lesson.id] });
   };
 
   return (

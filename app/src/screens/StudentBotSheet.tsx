@@ -1,6 +1,6 @@
-import { Copy, RefreshCw, Send, X } from 'lucide-react';
+import { CircleAlert, CircleCheck, Copy, MessageSquareText, RefreshCw, Send, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { chatLabel, chatsOf, inviteLink, inviteText, refreshBot, unlinkChat, useBot, type BotChat } from '../data/bot';
+import { botHistory, chatLabel, chatsOf, inviteLink, inviteText, refreshBot, unlinkChat, useBot, type BotChat, type HistoryItem } from '../data/bot';
 import type { Student } from '../data/types';
 import { fmt } from '../lib/dates';
 import { Avatar, Sheet } from '../ui/components';
@@ -24,17 +24,22 @@ async function copy(text: string) {
 /** On a phone the share sheet goes straight to Viber or Telegram; on a computer copying is simpler. */
 const canShare = () => typeof navigator.share === 'function' && window.matchMedia('(pointer: coarse)').matches;
 
-export function StudentBotSheet({ student, onClose }: { student: Student; onClose: () => void }) {
+export function StudentBotSheet({ student, onClose, onWrite }: { student: Student; onClose: () => void; onWrite: () => void }) {
   const { status, chats, loading, error } = useBot();
   const notify = useUi((s) => s.notify);
   const mine = chatsOf(chats, student.id);
   const [link, setLink] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string>();
+  const [history, setHistory] = useState<HistoryItem[] | null>(null);
+  const reachable = mine.some((c) => !c.blocked);
 
   useEffect(() => {
     refreshBot(true);
-  }, []);
+    botHistory(student.id)
+      .then(setHistory)
+      .catch(() => setHistory([]));
+  }, [student.id]);
 
   const getLink = async (renew = false) => {
     if (link && !renew) return link;
@@ -162,6 +167,30 @@ export function StudentBotSheet({ student, onClose }: { student: Student; onClos
       <p className="field-hint" style={{ marginTop: 10 }}>
         Посилання особисте: хто його відкриє, отримуватиме повідомлення про ці уроки. Якщо воно потрапило не туди, створіть нове, а зайвий чат відключіть хрестиком.
       </p>
+
+      {reachable && (
+        <button className="btn btn-soft btn-block" style={{ marginTop: 16 }} onClick={onWrite}>
+          <MessageSquareText size={18} /> Написати батькам
+        </button>
+      )}
+
+      {history && history.length > 0 && (
+        <div className="bot-history">
+          <span className="field-label">Останні повідомлення</span>
+          {history.slice(0, 5).map((h, i) => (
+            <div key={i} className="bot-history-item" data-status={h.status}>
+              {h.status === 'sent' ? <CircleCheck size={15} /> : <CircleAlert size={15} />}
+              <div>
+                <div className="faint">
+                  {fmt(h.at.slice(0, 10), 'd MMMM')}, {new Date(h.at).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })}
+                  {h.status === 'blocked' ? ' · заблокував бота' : h.status === 'failed' ? ' · не дійшло' : ''}
+                </div>
+                <div className="bot-history-text">{h.text}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {(problem || (error && !status)) && <p className="sync-error">{problem ?? error}</p>}
     </Sheet>

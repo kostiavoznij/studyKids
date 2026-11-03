@@ -24,8 +24,10 @@ export async function webhookSecret(token: string): Promise<string> {
 export class TelegramError extends Error {
   constructor(
     message: string,
-    /** 403 — the person blocked the bot; 400 — e.g. the chat doesn't exist */
+    /** 403 — the person blocked the bot; 400 — e.g. the chat doesn't exist; 429 — too fast */
     readonly code: number,
+    /** with 429: seconds to wait */
+    readonly retryAfter = 0,
   ) {
     super(message);
   }
@@ -38,8 +40,16 @@ export async function tg<T = unknown>(token: string, method: string, body: Recor
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
   });
-  const json = (await res.json().catch(() => ({}))) as { ok?: boolean; result?: T; description?: string; error_code?: number };
-  if (!json.ok) throw new TelegramError(json.description ?? `${method}: ${res.status}`, json.error_code ?? res.status);
+  const json = (await res.json().catch(() => ({}))) as {
+    ok?: boolean;
+    result?: T;
+    description?: string;
+    error_code?: number;
+    parameters?: { retry_after?: number };
+  };
+  if (!json.ok) {
+    throw new TelegramError(json.description ?? `${method}: ${res.status}`, json.error_code ?? res.status, json.parameters?.retry_after ?? 0);
+  }
   return json.result as T;
 }
 
@@ -71,21 +81,30 @@ export async function serviceRpc<T = unknown>(name: string, args: Record<string,
 }
 
 /**
- * The role of whoever called a function from the app: 'admin', 'manager',
- * 'teacher' or null. Asked of the database with their own sign-in, so it is
- * exactly what the app's other requests get.
+ * Calls a database function with the sign-in of whoever called this function
+ * from the app, so the database applies exactly their rights.
  */
-export async function callerRole(req: Request): Promise<string | null> {
+export async function callerRpc<T = unknown>(req: Request, name: string, args: Record<string, unknown> = {}): Promise<T> {
   const auth = req.headers.get('authorization');
   const apikey = req.headers.get('apikey');
-  if (!auth || !apikey) return null;
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/my_role`, {
+  if (!auth || !apikey) throw new Error('not signed in');
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${name}`, {
     method: 'POST',
     headers: { apikey, authorization: auth, 'content-type': 'application/json' },
-    body: '{}',
+    body: JSON.stringify(args),
   });
-  if (!res.ok) return null;
-  return (await res.json()) as string | null;
+  const text = await res.text();
+  if (!res.ok) throw new Error(`${name}: ${res.status} ${text}`);
+  return (text ? JSON.parse(text) : null) as T;
+}
+
+/** The caller's role: 'admin', 'manager', 'teacher' or null. */
+export async function callerRole(req: Request): Promise<string | null> {
+  try {
+    return await callerRpc<string | null>(req, 'my_role');
+  } catch {
+    return null;
+  }
 }
 
 export const CORS: Record<string, string> = {

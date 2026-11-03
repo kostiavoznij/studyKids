@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { ID, TaxKind } from '../data/types';
+import type { BotKind, ID, TaxKind } from '../data/types';
 
 export type Overlay =
   | { kind: 'lesson'; id: ID }
@@ -12,7 +12,9 @@ export type Overlay =
   | { kind: 'taxPlan' }
   | { kind: 'bank'; month: string }
   | { kind: 'teacher'; id?: ID }
-  | { kind: 'payout'; id?: ID; teacherId?: ID };
+  | { kind: 'payout'; id?: ID; teacherId?: ID }
+  | { kind: 'botNotify'; mode: BotKind; lessonIds?: ID[]; studentIds?: ID[]; from?: string; to?: string; reason?: string }
+  | { kind: 'botTemplate'; id?: ID; templateKind: BotKind };
 
 interface Toast {
   id: number;

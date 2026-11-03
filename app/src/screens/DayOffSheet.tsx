@@ -1,11 +1,12 @@
 import { Backpack, Coffee, PartyPopper, StickyNote, Thermometer, TreePalm, type LucideIcon } from 'lucide-react';
 import { useState } from 'react';
 import { DAY_OFF_KINDS, dayOffLabel } from '../data/constants';
+import { offerNotify } from '../data/bot';
 import { lessonTitle, liveLessons, useActiveTeachers } from '../data/selectors';
 import { useData } from '../data/store';
 import { dayOffApplies, teacherOf } from '../data/teachers';
 import { ALL_TEACHERS, MAIN_TEACHER, type DayOffKind, type ID } from '../data/types';
-import { shortDay, timeOf, todayKey } from '../lib/dates';
+import { nowStamp, shortDay, timeOf, todayKey } from '../lib/dates';
 import { LESSONS, nPlural } from '../lib/format';
 import { Sheet, Switch } from '../ui/components';
 import { TeacherChips } from '../ui/fields';
@@ -68,6 +69,10 @@ export function DayOffSheet({ id, day, teacherId, onClose }: { id?: ID; day?: st
           },
     );
     onClose();
+    const ahead = cancel ? before.filter((l) => l.start > nowStamp()).map((l) => l.id) : [];
+    // Days already behind are no news to anyone.
+    const today = todayKey();
+    if (ahead.length) offerNotify({ mode: 'cancelMany', lessonIds: ahead, from: from < today ? today : from, to: last, reason: dayOffLabel(kind) });
   };
 
   const remove = async () => {

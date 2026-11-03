@@ -454,7 +454,16 @@ export function StudentPage({ id }: { id: string }) {
           {tab === 'payments' && access.prices && account && <Payments st={st} account={account} />}
           {tab === 'notes' && <Notes st={st} />}
         </div>
-        {botOpen && <StudentBotSheet student={st} onClose={() => setBotOpen(false)} />}
+        {botOpen && (
+          <StudentBotSheet
+            student={st}
+            onClose={() => setBotOpen(false)}
+            onWrite={() => {
+              setBotOpen(false);
+              open({ kind: 'botNotify', mode: 'free', studentIds: [id] });
+            }}
+          />
+        )}
       </div>
     </div>
   );

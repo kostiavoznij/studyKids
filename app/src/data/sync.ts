@@ -39,12 +39,13 @@ const TYPES = [
   'teachers',
   'teacherPay',
   'teacherPayouts',
+  'botTemplates',
 ] as const;
 type RecType = (typeof TYPES)[number];
 /** What each role sends up; the server refuses the rest (supabase/migrations/20261104120000_roles.sql). */
 const PUSHED: Record<Role, readonly RecType[]> = {
   admin: TYPES,
-  manager: ['students', 'groups', 'lessons', 'payments', 'daysOff', 'teachers'],
+  manager: ['students', 'groups', 'lessons', 'payments', 'daysOff', 'teachers', 'botTemplates'],
   teacher: ['lessons'],
 };
 /** what every version of Code.gs stores */

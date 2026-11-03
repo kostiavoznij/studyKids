@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { cloud, cloudEnabled, useAccount } from './cloud';
-import type { ID } from './types';
+import { useUi } from '../ui/uiStore';
+import { useData } from './store';
+import type { BotKind, ID } from './types';
 
 /*
  * The Telegram bot, as the app sees it. Step 1: families connect to it.
@@ -86,6 +88,9 @@ async function call(action: 'status' | 'setup'): Promise<BotStatus> {
   return data as BotStatus;
 }
 
+/** Telegram reaches the bot and this person may use it. */
+export const botReady = (s: Pick<BotState, 'status'>) => allowed() && !!s.status?.configured && !!s.status.connected;
+
 let lastRefresh = 0;
 
 /** Reloads the bot's state and the connected chats. `force` skips the 10-second pause between refreshes. */
@@ -160,4 +165,85 @@ if (typeof document !== 'undefined') {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') refreshBot();
   });
+}
+
+/* ---------- sending ---------- */
+
+export interface Outgoing {
+  studentId: ID;
+  text: string;
+}
+
+export interface SendResult {
+  studentId: ID;
+  chats: number;
+  sent: number;
+  blocked: number;
+  failed: number;
+}
+
+/** Sends each text to the chats connected to its student; the server logs every attempt. */
+export async function sendBot(kind: BotKind, messages: Outgoing[]): Promise<SendResult[]> {
+  const { data, error } = await cloud().functions.invoke('bot', { body: { action: 'send', kind, messages } });
+  if (error) throw new Error(await reason(error));
+  const results = (data as { results: SendResult[] }).results;
+  // A chat found blocked while sending is marked on the server; show it here too.
+  if (results.some((r) => r.blocked)) refreshBot(true);
+  return results;
+}
+
+/** How a sending went, for the card that stays until she closes it. */
+export interface SendSummary {
+  /** families that got it */
+  sent: number;
+  /** all the families it was about */
+  total: number;
+  /** families without the bot: their text, to pass on some other way */
+  manual: { studentId: ID; name: string; text: string }[];
+  /** families the bot couldn't reach */
+  failed: { studentId: ID; name: string; text: string; blocked: boolean }[];
+}
+
+export const useBotResult = create<{ summary: SendSummary | null }>(() => ({ summary: null }));
+
+export interface HistoryItem {
+  at: string;
+  kind: string;
+  chatId: number;
+  text: string;
+  status: 'sent' | 'blocked' | 'failed';
+  error: string;
+  sentBy: string;
+}
+
+/** The latest messages about one student. */
+export async function botHistory(studentId: ID): Promise<HistoryItem[]> {
+  const { data, error } = await cloud().rpc('bot_history', { student: studentId, max_rows: 10 });
+  if (error) throw new Error(await reason(error));
+  return (data ?? []) as HistoryItem[];
+}
+
+/** Whether any of these students has a chat that can receive messages. */
+export const anyConnected = (studentIds: ID[]) => {
+  const chats = useBot.getState().chats;
+  return studentIds.some((id) => chats.some((c) => c.studentId === id && !c.blocked));
+};
+
+/** The students in these lessons, without duplicates and without deleted ones. */
+export function studentsOfLessons(lessonIds: ID[]): ID[] {
+  const { lessons, students } = useData.getState();
+  const ids = new Set<ID>();
+  for (const id of lessonIds) for (const p of lessons[id]?.participants ?? []) if (students[p.studentId] && !students[p.studentId].deletedAt) ids.add(p.studentId);
+  return [...ids];
+}
+
+/**
+ * After a cancellation: offers «Повідомити батьків?» — only when the bot works
+ * and at least one of the families has it. Otherwise nothing happens, so a
+ * cancellation never turns into extra steps.
+ */
+export function offerNotify(o: { mode: BotKind; lessonIds: ID[]; from?: string; to?: string; reason?: string }) {
+  if (!botReady(useBot.getState()) || o.lessonIds.length === 0) return;
+  if (!anyConnected(studentsOfLessons(o.lessonIds))) return;
+  useUi.getState().open({ kind: 'botNotify', ...o });
 }

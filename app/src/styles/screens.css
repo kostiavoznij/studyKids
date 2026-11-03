@@ -2097,3 +2097,164 @@
   gap: 8px;
   margin-top: 14px;
 }
+
+.bot-text {
+  min-height: 96px;
+  resize: vertical;
+}
+
+.bot-tokens {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: -4px 0 8px;
+  font-size: 13px;
+}
+
+.bot-preview {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+/* Looks like a message in Telegram, so it reads as what the family will get. */
+.bot-bubble {
+  justify-self: start;
+  max-width: 100%;
+  padding: 10px 14px;
+  border-radius: 16px 16px 16px 4px;
+  background: var(--accent-soft);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 14.5px;
+  line-height: 1.45;
+}
+
+.bot-recipients {
+  display: grid;
+  gap: 6px;
+  margin: 14px 0 6px;
+  font-size: 14px;
+}
+
+.bot-recipients p {
+  margin: 0;
+}
+
+.bot-save-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.bot-save-row .input {
+  flex: 1;
+  min-width: 0;
+}
+
+.bot-subtitle {
+  margin: 22px 0 8px;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.bot-template-sub {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bot-history {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.bot-history-item {
+  display: flex;
+  gap: 8px;
+  font-size: 13.5px;
+}
+
+.bot-history-item > svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--good);
+}
+
+.bot-history-item:not([data-status='sent']) > svg {
+  color: var(--warn);
+}
+
+.bot-history-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: pre-wrap;
+}
+
+/* After sending, when not everyone got it: stays until closed, over nothing important. */
+.bot-result {
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  bottom: calc(88px + env(safe-area-inset-bottom));
+  z-index: 60;
+  display: grid;
+  gap: 10px;
+  padding: 12px 12px 14px 16px;
+  border-radius: 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-2);
+  font-size: 14px;
+  animation: fade-in 0.25s ease both;
+}
+
+@media (min-width: 900px) {
+  .bot-result {
+    left: auto;
+    right: 28px;
+    bottom: 28px;
+    width: 380px;
+  }
+}
+
+.bot-result-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bot-result-head > svg {
+  color: var(--good);
+}
+
+.bot-result-head b {
+  flex: 1;
+}
+
+.bot-result-part {
+  display: grid;
+  gap: 6px;
+}
+
+.bot-result-part > span {
+  color: var(--text-2);
+  font-weight: 650;
+}
+
+.bot-result .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.bot-footer {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  width: 100%;
+}

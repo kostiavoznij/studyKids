@@ -1,24 +1,30 @@
-import { CircleCheck, ExternalLink, RefreshCw, Send, TriangleAlert } from 'lucide-react';
+import { ChevronRight, CircleCheck, ExternalLink, Plus, RefreshCw, Send, TriangleAlert } from 'lucide-react';
 import { useState } from 'react';
 import { useAccess } from '../data/access';
 import { refreshBot, setupBot, useBot } from '../data/bot';
+import { BUILT_IN, ownTemplates } from '../data/botText';
+import { useData } from '../data/store';
 import { useLiveStudents } from '../data/selectors';
 import { useUi } from '../ui/uiStore';
 
 /*
- * Налаштування → Telegram-бот, for the admin. Shows up only once the server has
- * a bot token (docs/BOT.md), so on an account without a bot there is nothing to
- * wonder about.
+ * Налаштування → Telegram-бот, for the admin and the manager (connecting the bot
+ * is the admin's). Shows up only once the server has a bot token (docs/BOT.md),
+ * so on an account without a bot there is nothing to wonder about.
  */
 export function BotSection() {
   const { status, chats, loading } = useBot();
-  const admin = useAccess().role === 'admin';
+  const access = useAccess();
+  const admin = access.role === 'admin';
+  const templates = useData((s) => s.botTemplates);
+  const open = useUi((s) => s.open);
   const students = useLiveStudents();
   const notify = useUi((s) => s.notify);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string>();
 
-  if (!admin || !status?.configured) return null;
+  if (!access.manage || access.role === 'teacher' || !status?.configured) return null;
+  const own = ownTemplates(templates);
 
   const live = new Set(students.filter((s) => s.status !== 'archived').map((s) => s.id));
   const families = new Set(chats.filter((c) => !c.blocked && live.has(c.studentId)).map((c) => c.studentId)).size;
@@ -63,7 +69,7 @@ export function BotSection() {
       </p>
 
       <div className="bot-actions">
-        {!status.connected && (
+        {admin && !status.connected && (
           <button className="btn btn-primary" disabled={busy} onClick={connect}>
             <Send size={17} /> Підключити бота
           </button>
@@ -74,7 +80,7 @@ export function BotSection() {
         <button className="btn btn-ghost btn-sm" disabled={loading} onClick={() => refreshBot(true)}>
           <RefreshCw size={16} className={loading ? 'spin' : undefined} /> Перевірити
         </button>
-        {status.connected && (
+        {admin && status.connected && (
           <button className="btn btn-ghost btn-sm" disabled={busy} onClick={connect}>
             Оновити опис і команди
           </button>
@@ -82,6 +88,32 @@ export function BotSection() {
       </div>
 
       {problem && <p className="sync-error">{problem}</p>}
+
+      <h3 className="bot-subtitle">Шаблони повідомлень</h3>
+      <div className="list">
+        {(['cancel', 'cancelMany'] as const).map((k) => (
+          <button key={k} className="list-item" onClick={() => open({ kind: 'botTemplate', templateKind: k })}>
+            <div className="list-main">
+              <div className="list-title">{BUILT_IN[k].name}</div>
+              <div className="list-sub">{templates[k] && !templates[k].deletedAt ? 'ваш текст' : 'стандартний текст'} · {BUILT_IN[k].when.toLowerCase()}</div>
+            </div>
+            <ChevronRight size={18} className="faint" />
+          </button>
+        ))}
+        {own.map((t) => (
+          <button key={t.id} className="list-item" onClick={() => open({ kind: 'botTemplate', id: t.id, templateKind: 'free' })}>
+            <div className="list-main">
+              <div className="list-title">{t.name}</div>
+              <div className="list-sub bot-template-sub">{t.text}</div>
+            </div>
+            <ChevronRight size={18} className="faint" />
+          </button>
+        ))}
+      </div>
+      <button className="link-btn" style={{ marginTop: 10, display: 'inline-flex', alignItems: 'center', gap: 6 }} onClick={() => open({ kind: 'botTemplate', templateKind: 'free' })}>
+        <Plus size={16} /> Мій шаблон
+      </button>
+      <p className="field-hint" style={{ marginTop: 6 }}>Свої шаблони — для повідомлень окремій сім'ї: картка учня → «Бот» → «Написати батькам».</p>
     </section>
   );
 }

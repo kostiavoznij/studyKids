@@ -26,6 +26,9 @@ import { TaxSheet } from './screens/TaxSheet';
 import { PayoutSheet } from './screens/PayoutSheet';
 import { TeacherSheet } from './screens/TeacherSheet';
 import { TeacherStatsScreen } from './screens/TeacherStatsScreen';
+import { BotNotifySheet } from './screens/BotNotifySheet';
+import { BotTemplateSheet } from './screens/BotTemplateSheet';
+import { BotResultHost } from './ui/BotResult';
 import { AccountChip, MeAvatar, PreviewBanner } from './ui/AccountChip';
 import { ConfirmHost, ToastHost, useNow } from './ui/components';
 import { useRoute } from './ui/router';
@@ -105,6 +108,7 @@ function Shell() {
       </nav>
 
       <OverlayHost />
+      <BotResultHost />
       <ToastHost />
       <ConfirmHost />
     </div>
@@ -138,6 +142,10 @@ function OverlayHost() {
       return <TeacherSheet key={overlay.id ?? 'new'} id={overlay.id} onClose={close} />;
     case 'payout':
       return <PayoutSheet key={overlay.id ?? `new:${overlay.teacherId}`} id={overlay.id} teacherId={overlay.teacherId} onClose={close} />;
+    case 'botNotify':
+      return <BotNotifySheet req={overlay} onClose={close} />;
+    case 'botTemplate':
+      return <BotTemplateSheet key={overlay.id ?? overlay.templateKind} id={overlay.id} kind={overlay.templateKind} onClose={close} />;
   }
 }
 

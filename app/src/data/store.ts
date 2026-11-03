@@ -17,6 +17,7 @@ import {
 } from './schedule';
 import type {
   BankMonth,
+  BotTemplate,
   Cancel,
   DayOff,
   Group,
@@ -55,6 +56,8 @@ export interface DataState {
   /** keyed by teacher id; only on the admin's devices */
   teacherPay: Record<ID, TeacherPay>;
   teacherPayouts: Record<ID, TeacherPayout>;
+  /** the bot's texts: the edited built-in ones by kind, her own ones by random id */
+  botTemplates: Record<ID, BotTemplate>;
   settings: Settings;
   seeded: 'demo' | 'clean' | null;
 }
@@ -123,6 +126,10 @@ interface Actions {
   saveTeacherPay(teacherId: ID, input: PayInput): void;
   savePayout(input: PayoutInput): ID;
   deletePayout(id: ID): void;
+  /** A built-in template is saved under its kind; her own get a random id. */
+  saveBotTemplate(input: Pick<BotTemplate, 'kind' | 'name' | 'text'> & { id?: ID }): ID;
+  /** Her own template goes; a built-in one goes back to the default text. */
+  deleteBotTemplate(id: ID): void;
   updateSettings(patch: Partial<Settings>): void;
   loadDemo(): void;
   clearAll(): void;
@@ -190,6 +197,7 @@ export const useData = create<Store>()(
         teachers: {},
         teacherPay: {},
         teacherPayouts: {},
+        botTemplates: {},
         settings: DEFAULT_SETTINGS,
         seeded: null,
 
@@ -596,6 +604,24 @@ export const useData = create<Store>()(
           set((s) => ({ teacherPayouts: { ...s.teacherPayouts, [id]: stamp({ ...x, deletedAt: Date.now() }) } }));
         },
 
+        saveBotTemplate(input) {
+          const s = get();
+          const id = input.id ?? (input.kind === 'free' ? uid() : input.kind);
+          const prev = s.botTemplates[id];
+          const t = Date.now();
+          const next: BotTemplate = prev
+            ? stamp({ ...prev, name: input.name, text: input.text, deletedAt: undefined })
+            : { id, kind: input.kind, name: input.name, text: input.text, createdAt: t, updatedAt: t };
+          set({ botTemplates: { ...s.botTemplates, [id]: next } });
+          return id;
+        },
+
+        deleteBotTemplate(id) {
+          const x = get().botTemplates[id];
+          if (!x || x.deletedAt) return;
+          set((s) => ({ botTemplates: { ...s.botTemplates, [id]: stamp({ ...x, deletedAt: Date.now() }) } }));
+        },
+
         updateSettings(patch) {
           const prevHorizon = get().settings.horizonWeeks;
           set((s) => ({ settings: { ...s.settings, ...patch } }));
@@ -603,7 +629,7 @@ export const useData = create<Store>()(
         },
 
         loadDemo() {
-          set({ taxPlans: {}, bankMonths: {}, teachers: {}, teacherPay: {}, teacherPayouts: {}, ...buildDemo(), seeded: 'demo' });
+          set({ taxPlans: {}, bankMonths: {}, teachers: {}, teacherPay: {}, teacherPayouts: {}, botTemplates: {}, ...buildDemo(), seeded: 'demo' });
           get().ensureSchedule();
         },
 
@@ -620,12 +646,13 @@ export const useData = create<Store>()(
             teachers: {},
             teacherPay: {},
             teacherPayouts: {},
+            botTemplates: {},
             seeded: 'clean',
           });
         },
 
         exportData() {
-          const { students, groups, lessons, payments, daysOff, taxes, taxPlans, bankMonths, teachers, teacherPay, teacherPayouts, settings } = get();
+          const { students, groups, lessons, payments, daysOff, taxes, taxPlans, bankMonths, teachers, teacherPay, teacherPayouts, botTemplates, settings } = get();
           return JSON.stringify(
             {
               app: 'uroky',
@@ -642,6 +669,7 @@ export const useData = create<Store>()(
               teachers,
               teacherPay,
               teacherPayouts,
+              botTemplates,
               settings,
             },
             null,
@@ -666,6 +694,7 @@ export const useData = create<Store>()(
               teachers: d.teachers ?? {},
               teacherPay: d.teacherPay ?? {},
               teacherPayouts: d.teacherPayouts ?? {},
+              botTemplates: d.botTemplates ?? {},
               settings: { ...DEFAULT_SETTINGS, ...d.settings },
               seeded: 'clean',
             });
@@ -680,7 +709,7 @@ export const useData = create<Store>()(
     {
       name: 'uroky-data',
       version: 2,
-      partialize: ({ students, groups, lessons, payments, daysOff, taxes, taxPlans, bankMonths, teachers, teacherPay, teacherPayouts, settings, seeded }) => ({
+      partialize: ({ students, groups, lessons, payments, daysOff, taxes, taxPlans, bankMonths, teachers, teacherPay, teacherPayouts, botTemplates, settings, seeded }) => ({
         students,
         groups,
         lessons,
@@ -692,6 +721,7 @@ export const useData = create<Store>()(
         teachers,
         teacherPay,
         teacherPayouts,
+        botTemplates,
         settings,
         seeded,
       }),
@@ -720,6 +750,7 @@ export const useData = create<Store>()(
           teachers: p.teachers ?? {},
           teacherPay: p.teacherPay ?? {},
           teacherPayouts: p.teacherPayouts ?? {},
+          botTemplates: p.botTemplates ?? {},
           settings: { ...DEFAULT_SETTINGS, ...p.settings },
         };
       },
