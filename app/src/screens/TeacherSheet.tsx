@@ -1,15 +1,19 @@
-import { useState } from 'react';
-import { useAccess } from '../data/access';
+import { Trash2 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { stopPreview, useAccess, usePreview } from '../data/access';
 import { PAY_MODES, termsOf } from '../data/pay';
-import { useLiveGroups, useLiveLessons, useLiveStudents, useTeachers } from '../data/selectors';
+import { useTeachers } from '../data/selectors';
 import { useData } from '../data/store';
-import { EMAIL_RE, teacherOf } from '../data/teachers';
+import { canDeleteTeacher, EMAIL_RE, teacherById, teacherTies } from '../data/teachers';
 import { MAIN_TEACHER, type PayMode, type TeacherStatus } from '../data/types';
 import { LESSONS, nPlural, STUDENTS } from '../lib/format';
 import { Segmented, Sheet, Switch } from '../ui/components';
 import { ColorPicker, NumberInput } from '../ui/fields';
-import { useUi } from '../ui/uiStore';
+import { ask, useUi } from '../ui/uiStore';
 import { nowStamp } from '../lib/dates';
+
+/** «передайте 1 учня, 3 учнів» */
+const STUDENTS_WHOM: [string, string, string] = ['учня', 'учнів', 'учнів'];
 
 const STATUSES: { value: TeacherStatus; label: string }[] = [
   { value: 'active', label: 'Працює' },
@@ -22,18 +26,22 @@ export function TeacherSheet({ id, onClose }: { id?: string; onClose: () => void
   const existing = teachers.find((t) => t.id === id);
   const saveTeacher = useData((s) => s.saveTeacher);
   const notify = useUi((s) => s.notify);
-  const students = useLiveStudents();
-  const groups = useLiveGroups();
-  const lessons = useLiveLessons();
+  const data = useData();
+  const deleteTeacher = useData((s) => s.deleteTeacher);
 
   const [name, setName] = useState(existing?.name ?? '');
   const [color, setColor] = useState(existing?.color ?? pickColor(teachers.map((t) => t.color)));
   const [email, setEmail] = useState(existing?.email ?? '');
   const [status, setStatus] = useState<TeacherStatus>(existing?.status ?? 'active');
   const [error, setError] = useState<string>();
+  const errorRef = useRef<HTMLParagraphElement>(null);
+  // The reason lands under the buttons at the bottom of the sheet: bring it into sight.
+  useEffect(() => {
+    if (error) errorRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [error]);
 
   // Her pay is finance: only the admin sees and sets it, and it's kept apart from the card.
-  const finance = useAccess().finance;
+  const { finance, destroy } = useAccess();
   const saveTeacherPay = useData((s) => s.saveTeacherPay);
   const payRec = useData((s) => s.teacherPay);
   const terms = existing ? termsOf(payRec, existing.id) : { mode: 'lesson' as PayMode, rate: 0, trials: true, lateCancels: false };
@@ -45,35 +53,54 @@ export function TeacherSheet({ id, onClose }: { id?: string; onClose: () => void
   const isMain = existing?.id === MAIN_TEACHER;
   const addr = email.trim().toLowerCase();
   const now = nowStamp();
-  // What still depends on her: archiving her would leave it without a teacher.
-  const busy = existing
-    ? {
-        students: students.filter((s) => s.status !== 'archived' && teacherOf(s) === existing.id).length,
-        groups: groups.filter((g) => g.status !== 'archived' && teacherOf(g) === existing.id).length,
-        lessons: lessons.filter((l) => l.status === 'planned' && l.start >= now && teacherOf(l) === existing.id).length,
-      }
-    : null;
+  // What still depends on her: archiving or deleting her would leave it without a teacher.
+  const ties = existing ? teacherTies(data, existing.id, now) : null;
+  const busy = ties ? { students: ties.students, groups: ties.groups, lessons: ties.ahead } : null;
+  const handOver = (b: NonNullable<typeof busy>) =>
+    `Спершу передайте іншій вчительці ${[
+      b.students && nPlural(b.students, STUDENTS_WHOM),
+      b.groups && `групи (${b.groups})`,
+      b.lessons && `заплановані уроки (${b.lessons})`,
+    ]
+      .filter(Boolean)
+      .join(', ')} — поле «Вчителька» в картці учня, групи чи окремого уроку.`;
 
   const save = () => {
     if (!name.trim()) return;
     if (addr && !EMAIL_RE.test(addr)) return setError('Перевірте пошту — має бути щось на зразок name@gmail.com');
     if (addr && teachers.some((t) => t.id !== existing?.id && t.email === addr)) return setError('Ця пошта вже вказана в картці іншої вчительки');
     if (existing && status === 'archived' && existing.status !== 'archived' && busy && busy.students + busy.groups + busy.lessons > 0) {
-      return setError(
-        `Спершу передайте іншій вчительці ${[
-          busy.students && nPlural(busy.students, STUDENTS),
-          busy.groups && `групи (${busy.groups})`,
-          busy.lessons && `заплановані уроки (${busy.lessons})`,
-        ]
-          .filter(Boolean)
-          .join(', ')} — поле «Вчителька» в картці учня, групи чи окремого уроку.`,
-      );
+      return setError(handOver(busy));
     }
     const tid = saveTeacher({ ...(existing ?? {}), name: name.trim(), color, email: addr, status });
     const payChanged =
       payMode !== terms.mode || rate !== terms.rate || trials !== terms.trials || lateCancels !== terms.lateCancels || (!existing && rate > 0);
     if (finance && payChanged) saveTeacherPay(tid, { mode: payMode, rate: payMode === 'none' ? 0 : rate, trials, lateCancels });
     notify(existing ? 'Збережено' : `${name.trim()} — додано`);
+    onClose();
+  };
+
+  const remove = async () => {
+    if (!existing || !ties || !busy) return;
+    if (busy.students + busy.groups + busy.lessons > 0) return setError(handOver(busy));
+    if (!canDeleteTeacher(ties)) {
+      return setError(
+        `Їй записано виплати (${ties.payouts}) — це гроші школи, тож картку краще перенести в архів. Якщо виплати внесено помилково, спершу видаліть їх у її статистиці.`,
+      );
+    }
+    const main = teacherById(data.teachers, MAIN_TEACHER).name;
+    const ok = await ask({
+      title: `Видалити картку «${existing.name}»?`,
+      text: ties.history
+        ? `Її минулі уроки (${ties.history}) буде записано на «${main}», тож історія учнів, баланси й статистика лишаться цілими. Якщо вона справді працювала у школі — краще перенесіть в архів: так видно, хто що вів.`
+        : 'За нею немає жодного уроку, тож картка просто зникне.',
+      ok: 'Видалити',
+      danger: true,
+    });
+    if (!ok) return;
+    if (!deleteTeacher(existing.id)) return setError('Не вдалося видалити — щось змінилося. Відкрийте картку ще раз.');
+    if (usePreview.getState().teacherId === existing.id) stopPreview();
+    notify(`${existing.name} — видалено`);
     onClose();
   };
 
@@ -185,11 +212,21 @@ export function TeacherSheet({ id, onClose }: { id?: string; onClose: () => void
           />
           <p className="field-hint" style={{ marginTop: 8 }}>
             В архіві вчителька більше не може увійти, а її проведені уроки лишаються в історії.
+            {destroy && ' Видалити варто лише картку, додану помилково чи для перевірки.'}
           </p>
+          {destroy && (
+            <button className="btn btn-danger-soft btn-block" style={{ marginTop: 18 }} onClick={remove}>
+              <Trash2 size={17} /> Видалити вчительку
+            </button>
+          )}
         </div>
       )}
 
-      {error && <p className="sync-error">{error}</p>}
+      {error && (
+        <p className="sync-error" ref={errorRef}>
+          {error}
+        </p>
+      )}
     </Sheet>
   );
 }

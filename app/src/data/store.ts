@@ -37,7 +37,8 @@ import type {
   TrialReport,
 } from './types';
 import { TAX_PLAN_ID } from './taxes';
-import { dayOffApplies, teacherOf } from './teachers';
+import { MAIN_TEACHER } from './types';
+import { canDeleteTeacher, dayOffApplies, teacherOf, teacherTies } from './teachers';
 
 export interface DataState {
   students: Record<ID, Student>;
@@ -113,6 +114,12 @@ interface Actions {
   saveBankMonth(input: BankInput): void;
   deleteBankMonth(month: string): void;
   saveTeacher(input: TeacherInput): ID;
+  /**
+   * Deletes a teacher's card for good (one added by mistake or to try things out).
+   * Refuses — returns false — while teacherTies() still holds her; her past lessons
+   * and archived students go to the main teacher, her own days off and pay terms go.
+   */
+  deleteTeacher(id: ID): boolean;
   saveTeacherPay(teacherId: ID, input: PayInput): void;
   savePayout(input: PayoutInput): ID;
   deletePayout(id: ID): void;
@@ -529,6 +536,40 @@ export const useData = create<Store>()(
           next.email = next.email.trim().toLowerCase();
           set({ teachers: { ...s.teachers, [next.id]: next } });
           return next.id;
+        },
+
+        deleteTeacher(id) {
+          const s = get();
+          const card = s.teachers[id];
+          if (!card || card.deletedAt || id === MAIN_TEACHER || !canDeleteTeacher(teacherTies(s, id, nowStamp()))) return false;
+          const at = Date.now();
+          const hers = (x: { teacherId?: ID; deletedAt?: number }) => !x.deletedAt && teacherOf(x) === id;
+          // Each record is copied only if it changes, so nothing else gets pushed again.
+          const move = <T extends { id: ID; teacherId?: ID; deletedAt?: number; updatedAt: number }>(rec: Record<ID, T>): Record<ID, T> => {
+            let out = rec;
+            for (const x of Object.values(rec)) {
+              if (!hers(x)) continue;
+              if (out === rec) out = { ...rec };
+              out[x.id] = stamp({ ...x, teacherId: undefined });
+            }
+            return out;
+          };
+          let daysOff = s.daysOff;
+          for (const d of Object.values(s.daysOff)) {
+            if (d.deletedAt || d.teacherId !== id) continue;
+            if (daysOff === s.daysOff) daysOff = { ...s.daysOff };
+            daysOff[d.id] = stamp({ ...d, deletedAt: at });
+          }
+          const pay = s.teacherPay[id];
+          set({
+            teachers: { ...s.teachers, [id]: stamp({ ...card, deletedAt: at }) },
+            lessons: move(s.lessons),
+            students: move(s.students),
+            groups: move(s.groups),
+            daysOff,
+            teacherPay: pay && !pay.deletedAt ? { ...s.teacherPay, [id]: stamp({ ...pay, deletedAt: at }) } : s.teacherPay,
+          });
+          return true;
         },
 
         saveTeacherPay(teacherId, input) {

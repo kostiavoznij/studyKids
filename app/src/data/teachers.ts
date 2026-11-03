@@ -1,4 +1,4 @@
-import { ALL_TEACHERS, MAIN_TEACHER, type DayOff, type ID, type Teacher } from './types';
+import { ALL_TEACHERS, MAIN_TEACHER, type DayOff, type Group, type ID, type Lesson, type Student, type Teacher, type TeacherPayout } from './types';
 
 /*
  * Teachers of the school. Every student, group, lesson and day off belongs to
@@ -42,3 +42,45 @@ export function teacherById(rec: Record<ID, Teacher>, id: ID): Teacher {
 export const dayOffApplies = (d: Pick<DayOff, 'teacherId'>, teacherId: ID) => d.teacherId === ALL_TEACHERS || teacherOf(d) === teacherId;
 
 export const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
+export interface TeacherTies {
+  /** students and groups she teaches now (not in the archive) */
+  students: number;
+  groups: number;
+  /** planned lessons still ahead */
+  ahead: number;
+  /** money the school paid her */
+  payouts: number;
+  /** her lessons in the past, cancelled ones included: deleting her hands them to the main teacher */
+  history: number;
+}
+
+/**
+ * What a teacher's card still holds. It can be deleted only while she teaches
+ * no one, has nothing planned and was never paid; her past lessons are not in
+ * the way, they go to the main teacher.
+ */
+export function teacherTies(
+  d: { students: Record<ID, Student>; groups: Record<ID, Group>; lessons: Record<ID, Lesson>; teacherPayouts: Record<ID, TeacherPayout> },
+  id: ID,
+  now: string,
+): TeacherTies {
+  const hers = (x: { teacherId?: ID; deletedAt?: number }) => !x.deletedAt && teacherOf(x) === id;
+  let ahead = 0;
+  let history = 0;
+  for (const l of Object.values(d.lessons)) {
+    if (!hers(l)) continue;
+    if (l.status === 'planned' && l.start >= now) ahead++;
+    else history++;
+  }
+  return {
+    students: Object.values(d.students).filter((s) => hers(s) && s.status !== 'archived').length,
+    groups: Object.values(d.groups).filter((g) => hers(g) && g.status !== 'archived').length,
+    ahead,
+    payouts: Object.values(d.teacherPayouts).filter((p) => !p.deletedAt && p.teacherId === id).length,
+    history,
+  };
+}
+
+/** Nothing but the past: the card may be deleted. */
+export const canDeleteTeacher = (t: TeacherTies) => t.students + t.groups + t.ahead + t.payouts === 0;
