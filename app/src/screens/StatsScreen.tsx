@@ -4,9 +4,23 @@ import { useAccess } from '../data/access';
 import { dayOffLabel } from '../data/constants';
 import { lessonsOfStudent, useDaysOff, useLiveLessons, useLivePayments, useLiveStudents, useReceived } from '../data/selectors';
 import { useAccounts } from '../data/billing';
-import { daysOffStats, deltaPct, insights, monthSeries, received, summarize, trialConversion, weekdayLoad, type DayOffStat } from '../data/stats';
+import {
+  ahead,
+  daysOffStats,
+  deltaPct,
+  hoursTaught,
+  insights,
+  monthSeries,
+  received,
+  recordsStart,
+  sameStretch,
+  summarize,
+  trialConversion,
+  weekdayLoad,
+  type DayOffStat,
+} from '../data/stats';
 import { useData } from '../data/store';
-import { periodLabel, periodRange, shiftPeriod, WEEKDAYS_SHORT, type Period, type Range } from '../lib/dates';
+import { fmt, periodLabel, periodRange, shiftPeriod, WEEKDAYS_SHORT, type Period, type Range } from '../lib/dates';
 import { compact, DAYS, grade1, LESSONS, money, nPlural } from '../lib/format';
 import { ColumnChart } from '../ui/charts';
 import { Avatar, Delta, Empty, Money, Segmented, Tile, useNow } from '../ui/components';
@@ -20,6 +34,11 @@ const PERIODS: { value: Period; label: string }[] = [
 ];
 
 const PREV_LABEL: Record<Period, string> = { week: 'до минулого тижня', month: 'до минулого місяця', year: 'до минулого року' };
+const SAME_LABEL: Record<Period, string> = {
+  week: 'до того ж часу минулого тижня',
+  month: 'до того ж часу минулого місяця',
+  year: 'до того ж часу минулого року',
+};
 
 export function StatsScreen() {
   const lessons = useLiveLessons();
@@ -39,10 +58,15 @@ export function StatsScreen() {
   const cur = periodRange(period, anchor);
   const prev = periodRange(period, shiftPeriod(period, anchor, -1));
   const a = summarize(lessons, cur, now);
-  const b = summarize(lessons, prev, now);
-  const projected = a.earned + a.expected;
-  const incomeDelta = deltaPct(projected, b.earned);
   const notes = insights(lessons, students, cur, prev, now);
+  // Facts are compared with the same stretch of the previous period, and only once there are records for it.
+  const start = recordsStart(lessons);
+  const stretch = sameStretch(cur, prev, now.slice(0, 10));
+  const cmpLabel = stretch.to !== prev.to ? SAME_LABEL[period] : PREV_LABEL[period];
+  const comparable = !!start && start <= stretch.from;
+  const b = summarize(lessons, stretch, now);
+  const next = ahead(lessons, cur, now);
+  const since = start && cur.from < start ? `записи з ${fmt(start, 'd MMMM yyyy')}` : '';
   // Differences with the bank she accepted belong to whole months, so a week goes without them.
   const { records, money: banked } = useReceived();
   const correction = (m: string) => (banked.get(m) ?? 0) - (records.get(m) ?? 0);
@@ -52,7 +76,7 @@ export function StatsScreen() {
     return x;
   };
   const inflow = inflowOf(cur);
-  const inflowPrev = inflowOf(prev);
+  const inflowPrev = inflowOf(stretch);
   const conv = trialConversion(lessons, studentsRec, cur);
   const offNow = daysOffStats(daysOff, lessons, cur, workDays);
   const offBefore = daysOffStats(daysOff, lessons, prev, workDays);
@@ -81,8 +105,8 @@ export function StatsScreen() {
       return { st, x, y };
     })
     .filter((r) => r.x.total > 0 || r.y.done > 0);
-  // Without money the students rank by lessons.
-  const weight = (x: (typeof rows)[number]['x']) => (finance ? x.earned + x.expected : x.done + x.planned);
+  // By what already happened: money earned, or (without money) lessons taught.
+  const weight = (x: (typeof rows)[number]['x']) => (finance ? x.earned : x.done);
   rows.sort((p, q) => weight(q.x) - weight(p.x));
   const maxIncome = Math.max(1, ...rows.map((r) => weight(r.x)));
 
@@ -111,38 +135,49 @@ export function StatsScreen() {
 
         {!finance && (
           <div className="hero-card rise">
-            <div className="hero-label">Уроки за період</div>
-            <div className="hero-value">{a.done + a.planned}</div>
+            <div className="hero-label">Проведено уроків</div>
+            <div className="hero-value">{a.done}</div>
             <div className="hero-sub">
-              проведено {a.done}
-              {a.planned > 0 && ` · ще заплановано ${a.planned}`}
+              {hoursTaught(lessons, cur).toLocaleString('uk-UA', { maximumFractionDigits: 1 })} год
+              {a.unmarked > 0 && ` · ще не відмічено ${a.unmarked}`}
+              {since && ` · ${since}`}
             </div>
             <div className="hero-foot">
-              {b.done > 0 ? <Delta pct={deltaPct(a.done + a.planned, b.done)} suffix={PREV_LABEL[period]} /> : <span className="faint">немає даних за попередній період</span>}
+              {comparable && b.done > 0 ? <Delta pct={deltaPct(a.done, b.done)} suffix={cmpLabel} /> : <span className="faint">порівнювати ще немає з чим</span>}
             </div>
+            {next.count > 0 && (
+              <div className="hero-money">
+                <span>
+                  ще за розкладом <b>{nPlural(next.count, LESSONS)}</b>
+                  {next.until < cur.to && ` (календар заповнено до ${fmt(next.until, 'd MMMM')})`}
+                </span>
+              </div>
+            )}
           </div>
         )}
 
         {finance && <div className="hero-card rise">
-          <div className="hero-label">Дохід за проведені уроки</div>
-          <div className="hero-value">{money(projected)}</div>
+          <div className="hero-label">Зароблено за проведені уроки</div>
+          <div className="hero-value">{money(a.earned)}</div>
           <div className="hero-sub">
-            {a.expected > 0 ? (
-              <>
-                зароблено {money(a.earned)} · ще заплановано {money(a.expected)}
-              </>
-            ) : (
-              <>за {nPlural(a.done, LESSONS)}</>
-            )}
+            за {nPlural(a.done, LESSONS)}
+            {a.unmarked > 0 && ` · ще не відмічено ${a.unmarked}`}
+            {since && ` · ${since}`}
           </div>
           <div className="hero-foot">
-            {incomeDelta != null ? (
-              <Delta pct={incomeDelta} suffix={PREV_LABEL[period]} />
+            {comparable && b.earned > 0 ? (
+              <Delta pct={deltaPct(a.earned, b.earned)} suffix={cmpLabel} />
             ) : (
-              <span className="faint">немає даних за попередній період</span>
+              <span className="faint">порівнювати ще немає з чим</span>
             )}
           </div>
           <div className="hero-money">
+            {next.count > 0 && (
+              <span>
+                ще за розкладом <b>{nPlural(next.count, LESSONS)}</b> на <b>{money(next.amount)}</b>
+                {next.until < cur.to && ` (календар заповнено до ${fmt(next.until, 'd MMMM')})`}
+              </span>
+            )}
             <span>
               надійшло на рахунок <b>{money(inflow.amount)}</b>
             </span>
@@ -169,18 +204,34 @@ export function StatsScreen() {
         </div>}
 
         <div className="tiles four" style={{ marginTop: 12 }}>
-          <Tile label="Проведено уроків" value={a.done} sub={<><Delta pct={deltaPct(a.done + a.planned, b.done)} /> {a.planned > 0 ? `+ ${a.planned} попереду` : ''}</>} />
           {finance ? (
-            <Tile label="Надійшло на рахунок" value={<Money value={inflow.amount} />} sub={inflowPrev.amount ? <Delta pct={deltaPct(inflow.amount, inflowPrev.amount)} /> : `${inflow.count} оплат`} />
+            <Tile
+              label="Проведено уроків"
+              value={a.done}
+              sub={
+                <>
+                  {comparable && b.done > 0 && <Delta pct={deltaPct(a.done, b.done)} />} {next.count > 0 ? `+ ${next.count} за розкладом` : ''}
+                </>
+              }
+            />
+          ) : (
+            <Tile label="Учнів на уроках" value={a.students} sub={comparable && b.students ? `було ${b.students}` : '—'} />
+          )}
+          {finance ? (
+            <Tile
+              label="Надійшло на рахунок"
+              value={<Money value={inflow.amount} />}
+              sub={comparable && inflowPrev.amount ? <Delta pct={deltaPct(inflow.amount, inflowPrev.amount)} /> : `${inflow.count} оплат`}
+            />
           ) : (
             <Tile label="Уроків з темою" value={a.topics} sub={a.done ? `з ${a.done} проведених` : '—'} />
           )}
           <Tile label="Пробні уроки" value={a.trials} sub={conv.trials ? `стали учнями: ${conv.converted} з ${conv.trials}` : 'знайомство з новими учнями'} />
-          <Tile label="Учнів на уроках" value={a.students} sub={b.students ? `було ${b.students}` : '—'} />
+          {finance && <Tile label="Учнів на уроках" value={a.students} sub={comparable && b.students ? `було ${b.students}` : '—'} />}
           <Tile label="Скасовано" value={a.cancelled} sub={a.cancelled ? `учнями ${a.cancelledByStudent} · вчителькою ${a.cancelledByTeacher}` : 'без скасувань'} />
-          <Tile label="Перенесено" value={a.moved} sub={b.moved ? `було ${b.moved}` : 'на інший час'} />
+          <Tile label="Перенесено" value={a.moved} sub={comparable && b.moved ? `було ${b.moved}` : 'на інший час'} />
           {finance && <Tile label="Середня ціна уроку" value={a.avgPrice ? <Money value={a.avgPrice} /> : '—'} sub="за проведений урок" />}
-          <Tile label="Засвоєння" value={a.avgGrade != null ? `${grade1(a.avgGrade)} з 5` : '—'} sub={b.avgGrade != null ? `було ${grade1(b.avgGrade)}` : 'середня оцінка'} />
+          <Tile label="Засвоєння" value={a.avgGrade != null ? `${grade1(a.avgGrade)} з 5` : '—'} sub={comparable && b.avgGrade != null ? `було ${grade1(b.avgGrade)}` : 'середня оцінка'} />
         </div>
 
         <div className="section-title">
@@ -278,13 +329,14 @@ export function StatsScreen() {
                 <div className="list-main">
                   <div className="rank-top">
                     <span className="list-title">{st.name}</span>
-                    <span className="rank-money">{finance ? money(x.earned + x.expected) : nPlural(x.done + x.planned, LESSONS)}</span>
+                    <span className="rank-money">{finance ? money(x.earned) : nPlural(x.done, LESSONS)}</span>
                   </div>
                   <div className="rank-bar">
                     <span style={{ width: `${(weight(x) / maxIncome) * 100}%` }} />
                   </div>
                   <div className="list-sub">
-                    {finance ? nPlural(x.done + x.planned, LESSONS) : `проведено ${x.done}`}
+                    {finance ? nPlural(x.done, LESSONS) : `проведено ${x.done}`}
+                    {x.planned > 0 && ` + ${x.planned} заплановано`}
                     {y.done > 0 && ` (було ${y.done})`}
                     {x.cancelled > 0 && ` · скасовано ${x.cancelled}`}
                     {x.avgGrade != null && ` · засвоєння ${grade1(x.avgGrade)}`}

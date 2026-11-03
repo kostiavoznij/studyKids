@@ -166,6 +166,11 @@ export interface Lesson {
   slotKey?: string;
   /** who teaches it; missing — MAIN_TEACHER */
   teacherId?: ID;
+  /**
+   * The teacher reported that the student didn't come. The lesson stays planned
+   * until the admin or the manager decides whether to cancel it and whether it's paid.
+   */
+  missed?: boolean;
   createdAt: number;
   updatedAt: number;
   deletedAt?: number;
@@ -268,6 +273,41 @@ export interface DayOff {
   cancelLessons: boolean;
   /** whose days these are: a teacher, ALL_TEACHERS, or missing — MAIN_TEACHER */
   teacherId?: ID;
+  createdAt: number;
+  updatedAt: number;
+  deletedAt?: number;
+}
+
+/**
+ * How a teacher is paid: a fixed sum per lesson, per hour, or a share of what the
+ * lesson costs the family. 'none' — not counted (the owner herself). One record per
+ * teacher, id = the teacher's id; only the admin sees it.
+ */
+export type PayMode = 'none' | 'lesson' | 'hour' | 'percent';
+
+export interface TeacherPay {
+  id: ID;
+  mode: PayMode;
+  /** UAH per lesson or per hour, or percent */
+  rate: number;
+  /** free trial lessons are paid to her too */
+  trials: boolean;
+  /** late cancellations the family pays for are paid to her too */
+  lateCancels: boolean;
+  createdAt: number;
+  updatedAt: number;
+  deletedAt?: number;
+}
+
+/** Money the school paid a teacher. */
+export interface TeacherPayout {
+  id: ID;
+  teacherId: ID;
+  /** 'yyyy-MM-dd' */
+  date: string;
+  /** UAH */
+  amount: number;
+  note: string;
   createdAt: number;
   updatedAt: number;
   deletedAt?: number;

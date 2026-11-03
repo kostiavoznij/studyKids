@@ -32,6 +32,8 @@ import type {
   TaxPayment,
   TaxPlan,
   Teacher,
+  TeacherPay,
+  TeacherPayout,
   TrialReport,
 } from './types';
 import { TAX_PLAN_ID } from './taxes';
@@ -49,6 +51,9 @@ export interface DataState {
   /** keyed by month 'yyyy-MM' */
   bankMonths: Record<ID, BankMonth>;
   teachers: Record<ID, Teacher>;
+  /** keyed by teacher id; only on the admin's devices */
+  teacherPay: Record<ID, TeacherPay>;
+  teacherPayouts: Record<ID, TeacherPayout>;
   settings: Settings;
   seeded: 'demo' | 'clean' | null;
 }
@@ -60,6 +65,8 @@ export type DayOffInput = Partial<DayOff> & Pick<DayOff, 'from' | 'to' | 'kind'>
 export type TaxInput = Partial<TaxPayment> & Pick<TaxPayment, 'kind' | 'period' | 'date' | 'amount'>;
 export type BankInput = Pick<BankMonth, 'month' | 'amount' | 'note' | 'acceptedDiff'>;
 export type TeacherInput = Partial<Teacher> & { name: string };
+export type PayInput = Pick<TeacherPay, 'mode' | 'rate' | 'trials' | 'lateCancels'>;
+export type PayoutInput = Partial<TeacherPayout> & Pick<TeacherPayout, 'teacherId' | 'date' | 'amount'>;
 
 export interface NewLessonInput {
   start: string;
@@ -87,6 +94,8 @@ interface Actions {
   updateParticipant(id: ID, studentId: ID, patch: Partial<Participant>): void;
   putLesson(lesson: Lesson): void;
   markDone(id: ID): void;
+  /** the teacher's «the student didn't come» */
+  setMissed(id: ID, missed: boolean): void;
   markManyDone(ids: ID[]): void;
   reopen(id: ID): void;
   cancelLesson(id: ID, cancel: Omit<Cancel, 'at'>): void;
@@ -104,6 +113,9 @@ interface Actions {
   saveBankMonth(input: BankInput): void;
   deleteBankMonth(month: string): void;
   saveTeacher(input: TeacherInput): ID;
+  saveTeacherPay(teacherId: ID, input: PayInput): void;
+  savePayout(input: PayoutInput): ID;
+  deletePayout(id: ID): void;
   updateSettings(patch: Partial<Settings>): void;
   loadDemo(): void;
   clearAll(): void;
@@ -169,6 +181,8 @@ export const useData = create<Store>()(
         taxPlans: {},
         bankMonths: {},
         teachers: {},
+        teacherPay: {},
+        teacherPayouts: {},
         settings: DEFAULT_SETTINGS,
         seeded: null,
 
@@ -372,7 +386,11 @@ export const useData = create<Store>()(
         },
 
         markDone(id) {
-          patchLesson(id, (l) => ({ ...l, status: 'done', cancel: undefined }));
+          patchLesson(id, (l) => ({ ...l, status: 'done', cancel: undefined, missed: undefined }));
+        },
+
+        setMissed(id, missed) {
+          patchLesson(id, (l) => ({ ...l, missed: missed || undefined }));
         },
 
         markManyDone(ids) {
@@ -380,7 +398,7 @@ export const useData = create<Store>()(
             const lessons = { ...s.lessons };
             for (const id of ids) {
               const l = lessons[id];
-              if (l) lessons[id] = stamp({ ...l, status: 'done' });
+              if (l) lessons[id] = stamp({ ...l, status: 'done', missed: undefined });
             }
             return { lessons };
           });
@@ -391,7 +409,7 @@ export const useData = create<Store>()(
         },
 
         cancelLesson(id, cancel) {
-          patchLesson(id, (l) => ({ ...l, status: 'cancelled', cancel: { ...cancel, at: Date.now() } }));
+          patchLesson(id, (l) => ({ ...l, status: 'cancelled', cancel: { ...cancel, at: Date.now() }, missed: undefined }));
         },
 
         moveLesson(id, to, by, reason, duration) {
@@ -401,6 +419,7 @@ export const useData = create<Store>()(
             duration: duration ?? l.duration,
             status: 'planned',
             cancel: undefined,
+            missed: undefined,
             moves: [...l.moves, { from: l.start, to, by, reason, at: Date.now() }],
           }));
         },
@@ -512,6 +531,30 @@ export const useData = create<Store>()(
           return next.id;
         },
 
+        saveTeacherPay(teacherId, input) {
+          const prev = get().teacherPay[teacherId];
+          const t = Date.now();
+          const next: TeacherPay = prev
+            ? stamp({ ...prev, ...input, deletedAt: undefined })
+            : { id: teacherId, createdAt: t, updatedAt: t, ...input };
+          set((s) => ({ teacherPay: { ...s.teacherPay, [teacherId]: next } }));
+        },
+
+        savePayout(input) {
+          const s = get();
+          const prev = input.id ? s.teacherPayouts[input.id] : undefined;
+          const t = Date.now();
+          const next: TeacherPayout = prev ? stamp({ ...prev, ...input }) : { id: uid(), note: '', createdAt: t, updatedAt: t, ...input };
+          set({ teacherPayouts: { ...s.teacherPayouts, [next.id]: next } });
+          return next.id;
+        },
+
+        deletePayout(id) {
+          const x = get().teacherPayouts[id];
+          if (!x) return;
+          set((s) => ({ teacherPayouts: { ...s.teacherPayouts, [id]: stamp({ ...x, deletedAt: Date.now() }) } }));
+        },
+
         updateSettings(patch) {
           const prevHorizon = get().settings.horizonWeeks;
           set((s) => ({ settings: { ...s.settings, ...patch } }));
@@ -519,18 +562,47 @@ export const useData = create<Store>()(
         },
 
         loadDemo() {
-          set({ taxPlans: {}, bankMonths: {}, teachers: {}, ...buildDemo(), seeded: 'demo' });
+          set({ taxPlans: {}, bankMonths: {}, teachers: {}, teacherPay: {}, teacherPayouts: {}, ...buildDemo(), seeded: 'demo' });
           get().ensureSchedule();
         },
 
         clearAll() {
-          set({ students: {}, groups: {}, lessons: {}, payments: {}, daysOff: {}, taxes: {}, taxPlans: {}, bankMonths: {}, teachers: {}, seeded: 'clean' });
+          set({
+            students: {},
+            groups: {},
+            lessons: {},
+            payments: {},
+            daysOff: {},
+            taxes: {},
+            taxPlans: {},
+            bankMonths: {},
+            teachers: {},
+            teacherPay: {},
+            teacherPayouts: {},
+            seeded: 'clean',
+          });
         },
 
         exportData() {
-          const { students, groups, lessons, payments, daysOff, taxes, taxPlans, bankMonths, teachers, settings } = get();
+          const { students, groups, lessons, payments, daysOff, taxes, taxPlans, bankMonths, teachers, teacherPay, teacherPayouts, settings } = get();
           return JSON.stringify(
-            { app: 'uroky', version: 2, exportedAt: new Date().toISOString(), students, groups, lessons, payments, daysOff, taxes, taxPlans, bankMonths, teachers, settings },
+            {
+              app: 'uroky',
+              version: 2,
+              exportedAt: new Date().toISOString(),
+              students,
+              groups,
+              lessons,
+              payments,
+              daysOff,
+              taxes,
+              taxPlans,
+              bankMonths,
+              teachers,
+              teacherPay,
+              teacherPayouts,
+              settings,
+            },
             null,
             1,
           );
@@ -551,6 +623,8 @@ export const useData = create<Store>()(
               taxPlans: d.taxPlans ?? {},
               bankMonths: d.bankMonths ?? {},
               teachers: d.teachers ?? {},
+              teacherPay: d.teacherPay ?? {},
+              teacherPayouts: d.teacherPayouts ?? {},
               settings: { ...DEFAULT_SETTINGS, ...d.settings },
               seeded: 'clean',
             });
@@ -565,7 +639,7 @@ export const useData = create<Store>()(
     {
       name: 'uroky-data',
       version: 2,
-      partialize: ({ students, groups, lessons, payments, daysOff, taxes, taxPlans, bankMonths, teachers, settings, seeded }) => ({
+      partialize: ({ students, groups, lessons, payments, daysOff, taxes, taxPlans, bankMonths, teachers, teacherPay, teacherPayouts, settings, seeded }) => ({
         students,
         groups,
         lessons,
@@ -575,6 +649,8 @@ export const useData = create<Store>()(
         taxPlans,
         bankMonths,
         teachers,
+        teacherPay,
+        teacherPayouts,
         settings,
         seeded,
       }),
@@ -601,6 +677,8 @@ export const useData = create<Store>()(
           taxPlans: p.taxPlans ?? {},
           bankMonths: p.bankMonths ?? {},
           teachers: p.teachers ?? {},
+          teacherPay: p.teacherPay ?? {},
+          teacherPayouts: p.teacherPayouts ?? {},
           settings: { ...DEFAULT_SETTINGS, ...p.settings },
         };
       },

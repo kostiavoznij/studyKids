@@ -24,6 +24,7 @@ import {
   Pencil,
   Plus,
   Sparkles,
+  UserX,
   Users,
   Wallet,
 } from 'lucide-react';
@@ -243,12 +244,14 @@ function DayView({ day, byDay, now }: { day: string; byDay: Map<string, Lesson[]
   const today = now.slice(0, 10);
   const swipe = useSwipe((dir) => setDay(dayKey(addDays(parseISO(day), dir))));
 
-  // Trial lessons need a report, so they are not bulk-marked.
-  const unmarked = lessons.filter((l) => l.status === 'planned' && !isTrial(l) && endStamp(l.start, l.duration) <= now);
+  // Trial lessons need a report, and a reported no-show a decision, so neither is bulk-marked.
+  const unmarked = lessons.filter((l) => l.status === 'planned' && !isTrial(l) && !l.missed && endStamp(l.start, l.duration) <= now);
   const olderUnmarked =
     day === today
-      ? liveLessons(rec).filter((l) => l.status === 'planned' && !isTrial(l) && l.start.slice(0, 10) < today)
+      ? liveLessons(rec).filter((l) => l.status === 'planned' && !isTrial(l) && !l.missed && l.start.slice(0, 10) < today)
       : [];
+  // No-shows the teachers reported wait for the admin or the manager.
+  const missed = day === today && access.manage ? liveLessons(rec).filter((l) => l.status === 'planned' && l.missed) : [];
 
   const markAll = (list: Lesson[]) => {
     const before = list.map((l) => ({ ...l }));
@@ -266,6 +269,16 @@ function DayView({ day, byDay, now }: { day: string; byDay: Map<string, Lesson[]
           </span>
           <button className="btn btn-sm btn-ghost" onClick={() => setDay(olderUnmarked[0].start.slice(0, 10))}>
             Показати
+          </button>
+        </div>
+      )}
+
+      {missed.length > 0 && (
+        <div className="banner bad" style={{ marginBottom: 12 }}>
+          <UserX size={20} />
+          <span style={{ flex: 1 }}>Учень не прийшов — потрібне ваше рішення: {nPlural(missed.length, LESSONS)}</span>
+          <button className="btn btn-sm btn-ghost" onClick={() => open({ kind: 'lesson', id: missed[0].id })}>
+            Вирішити
           </button>
         </div>
       )}
@@ -610,12 +623,14 @@ function LessonBlock({
   const trial = isTrial(lesson);
   const color = lessonColor(lesson, students, groups);
   const end = endStamp(lesson.start, lesson.duration);
-  const status = lesson.status === 'planned' && end <= now ? 'unmarked' : lesson.status;
+  const status = lesson.status === 'planned' && lesson.missed ? 'missed' : lesson.status === 'planned' && end <= now ? 'unmarked' : lesson.status;
   const time = `${timeOf(lesson.start)}–${timeOf(end)}`;
   const subject = lesson.groupId ? '' : students[lesson.participants[0]?.studentId]?.subject ?? '';
   const detail =
     status === 'cancelled'
       ? `скасовано${lesson.cancel?.reason ? ` · ${lesson.cancel.reason.toLowerCase()}` : ''}`
+      : status === 'missed'
+        ? 'учень не прийшов'
       : trial
         ? 'пробний урок'
         : lesson.topic || subject;
@@ -640,6 +655,8 @@ function LessonBlock({
       <CircleCheck size={narrow ? 13 : 17} strokeWidth={2.4} />
     ) : status === 'unmarked' ? (
       <CircleDashed size={narrow ? 13 : 17} strokeWidth={2.4} />
+    ) : status === 'missed' ? (
+      <UserX size={narrow ? 13 : 16} strokeWidth={2.4} />
     ) : lesson.moves.length && status === 'planned' ? (
       <CornerUpRight size={narrow ? 13 : 16} strokeWidth={2.4} />
     ) : null;
@@ -909,7 +926,7 @@ function MonthView({ date, byDay, now }: { date: Date; byDay: Map<string, Lesson
       <div className="tiles four" style={{ marginTop: 16 }}>
         <Tile label="Уроків" value={sum.done + sum.planned} sub={`проведено ${sum.done}${sum.trials ? ` · пробних ${sum.trials}` : ''}`} />
         {finance ? (
-          <Tile label="Дохід" value={<Money value={sum.earned + sum.expected} />} sub={`зароблено ${money(sum.earned)}`} />
+          <Tile label="Зароблено" value={<Money value={sum.earned} />} sub={sum.expected > 0 ? `ще заплановано ${money(sum.expected)}` : 'за проведені уроки'} />
         ) : (
           <Tile label="Пробні уроки" value={sum.trials} sub={sum.trialsDone ? `проведено ${sum.trialsDone}` : 'знайомство з новими учнями'} />
         )}

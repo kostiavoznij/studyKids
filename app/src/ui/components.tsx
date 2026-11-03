@@ -132,6 +132,7 @@ export function GradeMini({ value }: { value?: number | null }) {
 export function StatusBadge({ lesson, now }: { lesson: Lesson; now: string }) {
   if (lesson.status === 'done') return <span className="badge good">Проведено</span>;
   if (lesson.status === 'cancelled') return <span className="badge bad">Скасовано</span>;
+  if (lesson.missed) return <span className="badge bad">Учень не прийшов</span>;
   if (lesson.start < now) return <span className="badge warn">Не відмічено</span>;
   if (lesson.moves.length) return <span className="badge accent">Перенесено</span>;
   return <span className="badge">Заплановано</span>;

@@ -964,6 +964,14 @@ button.list-item:active {
   color: var(--warn);
 }
 
+.banner.bad {
+  background: var(--bad-soft);
+}
+
+.banner.bad svg {
+  color: var(--bad);
+}
+
 /* ---------- Animations ---------- */
 
 @keyframes fade-in {

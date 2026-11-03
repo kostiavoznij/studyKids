@@ -1,11 +1,13 @@
 import { useState } from 'react';
+import { useAccess } from '../data/access';
+import { PAY_MODES, termsOf } from '../data/pay';
 import { useLiveGroups, useLiveLessons, useLiveStudents, useTeachers } from '../data/selectors';
 import { useData } from '../data/store';
 import { EMAIL_RE, teacherOf } from '../data/teachers';
-import { MAIN_TEACHER, type TeacherStatus } from '../data/types';
+import { MAIN_TEACHER, type PayMode, type TeacherStatus } from '../data/types';
 import { LESSONS, nPlural, STUDENTS } from '../lib/format';
-import { Segmented, Sheet } from '../ui/components';
-import { ColorPicker } from '../ui/fields';
+import { Segmented, Sheet, Switch } from '../ui/components';
+import { ColorPicker, NumberInput } from '../ui/fields';
 import { useUi } from '../ui/uiStore';
 import { nowStamp } from '../lib/dates';
 
@@ -29,6 +31,16 @@ export function TeacherSheet({ id, onClose }: { id?: string; onClose: () => void
   const [email, setEmail] = useState(existing?.email ?? '');
   const [status, setStatus] = useState<TeacherStatus>(existing?.status ?? 'active');
   const [error, setError] = useState<string>();
+
+  // Her pay is finance: only the admin sees and sets it, and it's kept apart from the card.
+  const finance = useAccess().finance;
+  const saveTeacherPay = useData((s) => s.saveTeacherPay);
+  const payRec = useData((s) => s.teacherPay);
+  const terms = existing ? termsOf(payRec, existing.id) : { mode: 'lesson' as PayMode, rate: 0, trials: true, lateCancels: false };
+  const [payMode, setPayMode] = useState<PayMode>(terms.mode);
+  const [rate, setRate] = useState(terms.rate);
+  const [trials, setTrials] = useState(terms.trials);
+  const [lateCancels, setLateCancels] = useState(terms.lateCancels);
 
   const isMain = existing?.id === MAIN_TEACHER;
   const addr = email.trim().toLowerCase();
@@ -57,7 +69,10 @@ export function TeacherSheet({ id, onClose }: { id?: string; onClose: () => void
           .join(', ')} — поле «Вчителька» в картці учня, групи чи окремого уроку.`,
       );
     }
-    saveTeacher({ ...(existing ?? {}), name: name.trim(), color, email: addr, status });
+    const tid = saveTeacher({ ...(existing ?? {}), name: name.trim(), color, email: addr, status });
+    const payChanged =
+      payMode !== terms.mode || rate !== terms.rate || trials !== terms.trials || lateCancels !== terms.lateCancels || (!existing && rate > 0);
+    if (finance && payChanged) saveTeacherPay(tid, { mode: payMode, rate: payMode === 'none' ? 0 : rate, trials, lateCancels });
     notify(existing ? 'Збережено' : `${name.trim()} — додано`);
     onClose();
   };
@@ -111,6 +126,49 @@ export function TeacherSheet({ id, onClose }: { id?: string; onClose: () => void
           {busy.groups > 0 && `, групи: ${busy.groups}`}
           {` · попереду ${nPlural(busy.lessons, LESSONS)}`}
         </p>
+      )}
+
+      {finance && (
+        <div className="form-section">
+          <h3>Оплата вчительки</h3>
+          <p className="field-hint" style={{ marginBottom: 10 }}>
+            Скільки школа платить їй за проведені уроки. Бачить лише адміністратор — ні менеджер, ні сама вчителька.
+          </p>
+          <Segmented label="Як рахувати оплату" value={payMode} options={PAY_MODES} onChange={setPayMode} />
+          {payMode !== 'none' && (
+            <>
+              <label className="field" style={{ marginTop: 12 }}>
+                <span className="field-label">{payMode === 'percent' ? 'Відсоток від ціни уроку' : payMode === 'hour' ? 'Ставка за годину' : 'Ставка за урок'}</span>
+                <div className="input-wrap">
+                  <NumberInput value={rate} onChange={(v) => setRate(payMode === 'percent' ? Math.min(v, 100) : v)} label="Ставка" />
+                  <span className="input-suffix">{payMode === 'percent' ? '%' : '₴'}</span>
+                </div>
+                <span className="field-hint">
+                  {payMode === 'percent'
+                    ? 'Від того, скільки урок коштує сім’ї (для групи — від суми з усіх учнів).'
+                    : payMode === 'hour'
+                      ? 'Урок на 45 хвилин — це три чверті ставки.'
+                      : 'Однаково за будь-який урок, і за груповий теж.'}
+                </span>
+              </label>
+              <div className="toggle-row">
+                <div>
+                  <div style={{ fontWeight: 700 }}>Пробні уроки оплачуються</div>
+                  <div className="field-hint">{payMode === 'percent' ? 'Пробний безкоштовний для сім’ї, тож відсоток від нього — 0.' : 'Хоч для сім’ї вони безкоштовні.'}</div>
+                </div>
+                <Switch checked={trials} onChange={setTrials} label="Пробні уроки оплачуються" />
+              </div>
+              <div className="toggle-row">
+                <div>
+                  <div style={{ fontWeight: 700 }}>Пізні скасування оплачуються</div>
+                  <div className="field-hint">Ті, за які сім'я все одно платить.</div>
+                </div>
+                <Switch checked={lateCancels} onChange={setLateCancels} label="Пізні скасування оплачуються" />
+              </div>
+            </>
+          )}
+          {payMode === 'none' && <p className="field-hint" style={{ marginTop: 8 }}>Оплата не рахується — так для власниці школи.</p>}
+        </div>
       )}
 
       {existing && !isMain && (

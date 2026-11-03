@@ -27,7 +27,19 @@ import type { ID } from './types';
  * out. When a device's role changes it starts over from an empty copy.
  */
 
-const TYPES = ['students', 'groups', 'lessons', 'payments', 'daysOff', 'taxes', 'taxPlans', 'bankMonths', 'teachers'] as const;
+const TYPES = [
+  'students',
+  'groups',
+  'lessons',
+  'payments',
+  'daysOff',
+  'taxes',
+  'taxPlans',
+  'bankMonths',
+  'teachers',
+  'teacherPay',
+  'teacherPayouts',
+] as const;
 type RecType = (typeof TYPES)[number];
 /** What each role sends up; the server refuses the rest (supabase/migrations/20261104120000_roles.sql). */
 const PUSHED: Record<Role, readonly RecType[]> = {

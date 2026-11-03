@@ -1,7 +1,8 @@
-import { ChevronLeft, ChevronRight, GraduationCap } from 'lucide-react';
+import { ChevronLeft, ChevronRight, GraduationCap, HandCoins, Settings2 } from 'lucide-react';
 import { useMemo, useState, type CSSProperties } from 'react';
 import { useAccess } from '../data/access';
 import { colorHex } from '../data/constants';
+import { accrued, owed, payoutsOf, termsOf, termsText } from '../data/pay';
 import { useLiveLessons, useLivePayments, useTeachers } from '../data/selectors';
 import {
   ahead,
@@ -23,6 +24,7 @@ import { compact, grade1, LESSONS, money, nPlural, STUDENTS } from '../lib/forma
 import { ColumnChart } from '../ui/charts';
 import { Avatar, Empty, Segmented, Tile, useNow } from '../ui/components';
 import { navigate } from '../ui/router';
+import { useUi } from '../ui/uiStore';
 
 /*
  * Statistics per teacher, apart from the main statistics so that day-to-day
@@ -49,6 +51,10 @@ interface Row {
   active: number;
   /** payments in the period from families whose money goes to her */
   paid: number;
+  /** her pay for the period's lessons */
+  pay: number;
+  /** what the school still owes her, all periods together */
+  owed: number;
 }
 
 export function TeacherStatsScreen({ teacherId }: { teacherId?: ID }) {
@@ -58,6 +64,8 @@ export function TeacherStatsScreen({ teacherId }: { teacherId?: ID }) {
   const payments = useLivePayments();
   const students = useData((s) => s.students);
   const groups = useData((s) => s.groups);
+  const payRec = useData((s) => s.teacherPay);
+  const payouts = useData((s) => s.teacherPayouts);
   const now = useNow();
   const [period, setPeriod] = useState<Period>('month');
   const [anchor, setAnchor] = useState(() => new Date());
@@ -93,11 +101,13 @@ export function TeacherStatsScreen({ teacherId }: { teacherId?: ID }) {
           hours: hoursTaught(ls, cur),
           active: Object.values(students).filter((s) => !s.deletedAt && s.status === 'active' && teacherOf(s) === teacher.id).length,
           paid: paidBy.get(teacher.id) ?? 0,
+          pay: accrued(ls, teacher.id, termsOf(payRec, teacher.id), cur).amount,
+          owed: owed(ls, payouts, teacher.id, termsOf(payRec, teacher.id)),
         };
       })
       // An archived teacher shows up only for periods she taught in.
       .filter((r) => r.teacher.status === 'active' || r.cur.total > 0);
-  }, [teachers, lessons, payments, students, groups, cur.from, cur.to, prev.from, prev.to, now]);
+  }, [teachers, lessons, payments, students, groups, payRec, payouts, cur.from, cur.to, prev.from, prev.to, now]);
 
   const selected = rows.find((r) => r.teacher.id === teacherId);
 
@@ -246,6 +256,8 @@ function School({
   const sorted = [...rows].sort((x, y) => weight(y) - weight(x));
   const max = Math.max(1, ...sorted.map(weight));
   const inflow = received(payments, cur);
+  const payTotal = rows.reduce((sum, r) => sum + r.pay, 0);
+  const owedTotal = rows.reduce((sum, r) => sum + Math.max(0, r.owed), 0);
 
   return (
     <>
@@ -256,6 +268,9 @@ function School({
         <Tile label="Учнів на уроках" value={a.students} sub={comparable && b.students ? `було ${b.students}` : '—'} />
         {finance && <Tile label="Середня ціна уроку" value={a.avgPrice ? money(a.avgPrice) : '—'} sub="за проведений урок" />}
         {finance && <Tile label="Надійшло на рахунок" value={money(inflow.amount)} sub={`${inflow.count} оплат`} />}
+        {finance && payTotal > 0 && <Tile label="Нараховано вчителькам" value={money(payTotal)} sub="за уроки цього періоду" />}
+        {finance && payTotal > 0 && <Tile label="Лишається школі" value={money(a.earned - payTotal)} sub="зароблено мінус оплата вчителькам" />}
+        {finance && owedTotal > 0.5 && <Tile label="Школа винна вчителькам" value={money(owedTotal)} sub="за весь час, з урахуванням виплат" />}
       </div>
 
       <div className="section-title">
@@ -281,6 +296,7 @@ function School({
                 {hours(r.hours)} · {nPlural(r.cur.students, STUDENTS)}
                 {finance && r.cur.avgPrice > 0 && ` · у середньому ${money(r.cur.avgPrice)}`}
                 {r.cur.cancelled > 0 && ` · скасовано ${r.cur.cancelled}`}
+                {finance && r.owed > 0.5 && ` · до виплати ${money(r.owed)}`}
                 {r.teacher.status === 'archived' && ' · в архіві'}
               </div>
             </div>
@@ -317,6 +333,8 @@ function TeacherDetail({ row, cur, anchor, comparable, finance }: { row: Row; cu
         <Tile label="Засвоєння" value={a.avgGrade != null ? `${grade1(a.avgGrade)} з 5` : '—'} sub={comparable && b.avgGrade != null ? `було ${grade1(b.avgGrade)}` : 'середня оцінка'} />
         <Tile label="Уроків з темою" value={a.topics} sub={a.done ? `з ${a.done} проведених` : '—'} />
       </div>
+
+      {finance && <PayCard row={row} cur={cur} />}
 
       <div className="card" style={{ marginTop: 16 }}>
         <div className="card-title">
@@ -367,5 +385,82 @@ function TeacherDetail({ row, cur, anchor, comparable, finance }: { row: Row; cu
         </div>
       )}
     </>
+  );
+}
+
+/** What the school owes her: pay accrued for the period, payouts, and the balance over all time. */
+function PayCard({ row, cur }: { row: Row; cur: Range }) {
+  const payRec = useData((s) => s.teacherPay);
+  const payoutsRec = useData((s) => s.teacherPayouts);
+  const open = useUi((s) => s.open);
+  const { teacher } = row;
+  const terms = termsOf(payRec, teacher.id);
+  const period = accrued(row.lessons, teacher.id, terms, cur);
+  const list = payoutsOf(payoutsRec, teacher.id, cur);
+  const paidNow = list.reduce((sum, p) => sum + p.amount, 0);
+
+  if (terms.mode === 'none' || terms.rate <= 0) {
+    return (
+      <div className="card pay-terms" style={{ marginTop: 16 }}>
+        <span className="faint" style={{ flex: 1, fontSize: 14 }}>
+          Оплата вчительки не рахується{teacher.id === 'main' ? ' (власниця школи)' : ''}.
+        </span>
+        <button className="btn btn-sm btn-ghost" onClick={() => open({ kind: 'teacher', id: teacher.id })}>
+          <Settings2 size={16} /> Вказати ставку
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="card" style={{ marginTop: 16 }}>
+      <div className="card-title">
+        <h3>Оплата вчительки</h3>
+        <button className="link-btn" onClick={() => open({ kind: 'teacher', id: teacher.id })}>
+          {termsText(terms)}
+        </button>
+      </div>
+      <div className="pay-grid">
+        <div>
+          <div className="tile-label">Нараховано за період</div>
+          <div className="pay-num">{money(period.amount)}</div>
+          <div className="faint" style={{ fontSize: 12.5 }}>
+            за {nPlural(period.count, LESSONS)}
+          </div>
+        </div>
+        <div>
+          <div className="tile-label">Виплачено за період</div>
+          <div className="pay-num">{money(paidNow)}</div>
+          <div className="faint" style={{ fontSize: 12.5 }}>
+            {list.length ? nPlural(list.length, ['виплата', 'виплати', 'виплат']) : 'виплат не було'}
+          </div>
+        </div>
+        <div>
+          <div className="tile-label">{row.owed < -0.5 ? 'Виплачено наперед' : 'До виплати'}</div>
+          <div className={`pay-num${row.owed > 0.5 ? ' warn' : ''}`}>{money(Math.abs(row.owed))}</div>
+          <div className="faint" style={{ fontSize: 12.5 }}>
+            за весь час
+          </div>
+        </div>
+      </div>
+      <button className="btn btn-primary" style={{ marginTop: 14 }} onClick={() => open({ kind: 'payout', teacherId: teacher.id })}>
+        <HandCoins size={18} /> Записати виплату
+      </button>
+      {list.length > 0 && (
+        <div className="list" style={{ marginTop: 14 }}>
+          {list.map((p) => (
+            <button key={p.id} className="list-item" onClick={() => open({ kind: 'payout', id: p.id })}>
+              <div className="list-main">
+                <div className="list-title">{money(p.amount)}</div>
+                <div className="list-sub">
+                  {fmt(p.date, 'd MMMM yyyy')}
+                  {p.note && ` · ${p.note}`}
+                </div>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

@@ -331,6 +331,10 @@
   color: var(--warn);
 }
 
+.lesson-block[data-status='missed'] .lb-icon {
+  color: var(--bad);
+}
+
 .lesson-block.compact {
   flex-direction: row;
   align-items: center;

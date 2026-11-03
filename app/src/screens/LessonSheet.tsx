@@ -11,6 +11,7 @@ import {
   Sparkles,
   Trash2,
   UserCheck,
+  UserX,
   Users,
   X,
 } from 'lucide-react';
@@ -89,6 +90,8 @@ function MainStep({ lesson, onStep, onClose }: { lesson: Lesson; onStep: (s: Ste
   const updateParticipant = useData((s) => s.updateParticipant);
   const deleteLesson = useData((s) => s.deleteLesson);
   const putLesson = useData((s) => s.putLesson);
+  const setMissed = useData((s) => s.setMissed);
+  const cancelLesson = useData((s) => s.cancelLesson);
   const teachers = useData((s) => s.teachers);
   const notify = useUi((s) => s.notify);
   const access = useAccess();
@@ -97,6 +100,8 @@ function MainStep({ lesson, onStep, onClose }: { lesson: Lesson; onStep: (s: Ste
   const isGroup = !!lesson.groupId || lesson.participants.length > 1;
   const trial = isTrial(lesson);
   const first = students[lesson.participants[0]?.studentId];
+  // A teacher reports a no-show once the lesson has started; in a group she marks each absent child instead.
+  const canReportMissed = !access.manage && !isGroup && !lesson.missed && lesson.start <= now;
   const tz = !isGroup && first?.timezone && zoneDiffers(first.timezone) ? first.timezone : '';
 
   const withUndo = (text: string, action: () => void) => {
@@ -142,12 +147,54 @@ function MainStep({ lesson, onStep, onClose }: { lesson: Lesson; onStep: (s: Ste
         )}
       </div>
 
+      {lesson.status === 'planned' && lesson.missed && (
+        <div className="ls-info bad">
+          <div>
+            <strong>{access.manage ? 'Вчителька позначила: учень не прийшов' : 'Ви позначили: учень не прийшов'}</strong>
+            <div className="muted" style={{ fontSize: 13 }}>
+              {access.manage
+                ? 'Вирішіть, чи скасувати урок і чи він оплачується. Якщо урок усе ж відбувся — відмітьте «Проведено».'
+                : 'Адміністратор або менеджер вирішить, чи скасувати урок і чи він оплачується.'}
+            </div>
+          </div>
+          {access.manage ? (
+            <div className="set-buttons" style={{ marginTop: 12 }}>
+              <button
+                className="btn btn-sm btn-ghost"
+                onClick={() => withUndo('Урок скасовано', () => cancelLesson(lesson.id, { by: 'student', reason: 'Не прийшов', charged: false }))}
+              >
+                Скасувати, не оплачується
+              </button>
+              <button
+                className="btn btn-sm btn-ghost"
+                onClick={() => withUndo('Урок скасовано, оплачується', () => cancelLesson(lesson.id, { by: 'student', reason: 'Не прийшов', charged: true }))}
+              >
+                Скасувати, оплачується
+              </button>
+              <button className="btn btn-sm btn-ghost" onClick={() => withUndo('Позначку прибрано', () => setMissed(lesson.id, false))}>
+                Прибрати позначку
+              </button>
+            </div>
+          ) : (
+            <button className="link-btn" style={{ marginTop: 8 }} onClick={() => withUndo('Позначку прибрано', () => setMissed(lesson.id, false))}>
+              Прибрати позначку
+            </button>
+          )}
+        </div>
+      )}
+
       {lesson.status === 'planned' && (
-        <div className="ls-actions" data-single={access.manage ? undefined : ''}>
+        <div className="ls-actions" data-count={access.manage ? 3 : canReportMissed ? 2 : 1}>
           <button className="ls-action done" onClick={() => withUndo('Урок проведено', () => markDone(lesson.id))}>
             <Check size={22} strokeWidth={2.6} />
             Проведено
           </button>
+          {canReportMissed && (
+            <button className="ls-action cancel" onClick={() => withUndo('Позначено: учень не прийшов', () => setMissed(lesson.id, true))}>
+              <UserX size={22} strokeWidth={2.4} />
+              Учень не прийшов
+            </button>
+          )}
           {access.manage && (
             <>
               <button className="ls-action move" onClick={() => onStep('move')}>
@@ -165,6 +212,7 @@ function MainStep({ lesson, onStep, onClose }: { lesson: Lesson; onStep: (s: Ste
       {lesson.status === 'planned' && !access.manage && (
         <p className="field-hint" style={{ marginTop: 8 }}>
           Перенести чи скасувати урок може адміністратор або менеджер.
+          {!isGroup && !canReportMissed && !lesson.missed && ' Якщо учень не прийде — після початку уроку з’явиться кнопка «Учень не прийшов».'}
         </p>
       )}
 

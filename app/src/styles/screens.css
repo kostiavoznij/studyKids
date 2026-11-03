@@ -27,9 +27,13 @@
   gap: 8px;
 }
 
-/* A teacher only marks the lesson as done. */
-.ls-actions[data-single] {
+/* A teacher marks the lesson as done, or reports a no-show. */
+.ls-actions[data-count='1'] {
   grid-template-columns: minmax(0, 1fr);
+}
+
+.ls-actions[data-count='2'] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .ls-action {
@@ -2015,4 +2019,35 @@
 
 .lock-actions .spin {
   align-self: center;
+}
+
+/* ---------- Teacher pay ---------- */
+
+.pay-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.pay-num {
+  font-size: 20px;
+  font-weight: 800;
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
+
+.pay-num.warn {
+  color: var(--warn);
+}
+
+.pay-terms {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+@media (max-width: 420px) {
+  .pay-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
 }

@@ -374,3 +374,14 @@ export function ahead(lessons: Lesson[], r: Range, now: string) {
   }
   return { count, amount, until };
 }
+
+/**
+ * The stretch of the previous period that matches how far the current one has
+ * gone: 1–3 October for 1–3 November. A period that is over is compared whole.
+ */
+export function sameStretch(cur: Range, prev: Range, today: string): Range {
+  if (today < cur.from || today > cur.to) return prev;
+  const days = differenceInCalendarDays(parseISO(today), parseISO(cur.from));
+  const to = dayKey(addDays(parseISO(prev.from), days));
+  return { from: prev.from, to: to < prev.to ? to : prev.to };
+}

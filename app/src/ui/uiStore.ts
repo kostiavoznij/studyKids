@@ -11,7 +11,8 @@ export type Overlay =
   | { kind: 'tax'; id?: ID; taxKind?: TaxKind; period?: string }
   | { kind: 'taxPlan' }
   | { kind: 'bank'; month: string }
-  | { kind: 'teacher'; id?: ID };
+  | { kind: 'teacher'; id?: ID }
+  | { kind: 'payout'; id?: ID; teacherId?: ID };
 
 interface Toast {
   id: number;
