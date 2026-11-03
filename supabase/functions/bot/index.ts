@@ -47,7 +47,7 @@ async function status(req: Request, token: string) {
   };
 }
 
-const KINDS = ['cancel', 'cancelMany', 'free'];
+const KINDS = ['cancel', 'cancelMany', 'move', 'free'];
 
 interface Outgoing {
   studentId: string;

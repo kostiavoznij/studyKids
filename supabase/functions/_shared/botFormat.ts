@@ -9,7 +9,7 @@
 export const SCHOOL_ZONE = 'Europe/Kyiv';
 
 /** What a bot message is about. */
-export type BotKind = 'cancel' | 'cancelMany' | 'free' | 'reminder';
+export type BotKind = 'cancel' | 'cancelMany' | 'move' | 'free' | 'reminder';
 
 /** When reminders go out, and to whom. Lives on the 'reminder' template. */
 export interface ReminderSchedule {
@@ -28,6 +28,7 @@ export const NO_REMINDERS: ReminderSchedule = { enabled: false, before: [60], ev
 export const DEFAULT_TEXT: Record<Exclude<BotKind, 'free'>, string> = {
   cancel: "Добрий день! Урок {дата} о {час} скасовано ({ім'я}). Вибачте за незручності.",
   cancelMany: "Добрий день! {період} уроків не буде. Скасовано ({ім'я}):\n{уроки}\nВибачте за незручності.",
+  move: "Добрий день! Урок ({ім'я}) перенесено: тепер він {дата} о {час} (замість {було}).",
   reminder: "Добрий день! Нагадую: {дата} о {час} урок ({ім'я}). До зустрічі!",
 };
 
@@ -39,16 +40,19 @@ export interface BotValues {
   period?: string;
   lessons?: string;
   reason?: string;
+  /** where a moved lesson was: «ср, 5 листопада, 16:00» */
+  was?: string;
 }
 
 export const PLACEHOLDERS: { key: keyof BotValues; token: string; label: string; kinds: BotKind[] }[] = [
-  { key: 'name', token: "{ім'я}", label: "ім'я учня", kinds: ['cancel', 'cancelMany', 'reminder', 'free'] },
-  { key: 'date', token: '{дата}', label: 'дата уроку', kinds: ['cancel', 'reminder'] },
-  { key: 'time', token: '{час}', label: 'час уроку', kinds: ['cancel', 'reminder'] },
+  { key: 'name', token: "{ім'я}", label: "ім'я учня", kinds: ['cancel', 'cancelMany', 'move', 'reminder', 'free'] },
+  { key: 'date', token: '{дата}', label: 'дата уроку', kinds: ['cancel', 'move', 'reminder'] },
+  { key: 'time', token: '{час}', label: 'час уроку', kinds: ['cancel', 'move', 'reminder'] },
+  { key: 'was', token: '{було}', label: 'коли було', kinds: ['move'] },
   { key: 'period', token: '{період}', label: 'які дні', kinds: ['cancelMany'] },
   { key: 'lessons', token: '{уроки}', label: 'список уроків', kinds: ['cancelMany'] },
-  { key: 'reason', token: '{причина}', label: 'причина', kinds: ['cancel', 'cancelMany'] },
-  { key: 'teacher', token: '{вчителька}', label: 'вчителька', kinds: ['cancel', 'cancelMany', 'reminder'] },
+  { key: 'reason', token: '{причина}', label: 'причина', kinds: ['cancel', 'cancelMany', 'move'] },
+  { key: 'teacher', token: '{вчителька}', label: 'вчителька', kinds: ['cancel', 'cancelMany', 'move', 'reminder'] },
 ];
 
 const capFirst = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -178,15 +182,18 @@ export function timePhrase(stamp: string, zone?: string): string {
   return there === here ? here : `${here} за Києвом (у вас ${there})`;
 }
 
+/** A lesson in short: «ср, 5 листопада, 16:00». */
+export function shortLesson(start: string, zone?: string): string {
+  const d = dateOf(start.slice(0, 10));
+  return `${WEEKDAY_SHORT[isoWeekday(d) - 1]}, ${dayMonth(d)}, ${timePhrase(start, zone)}`;
+}
+
 /** One line per lesson, earliest first: «• ср, 5 листопада, 16:00». */
 export function lessonLines(starts: string[], zone?: string): string {
   return starts
     .slice()
     .sort()
-    .map((s) => {
-      const d = dateOf(s.slice(0, 10));
-      return `• ${WEEKDAY_SHORT[isoWeekday(d) - 1]}, ${dayMonth(d)}, ${timePhrase(s, zone)}`;
-    })
+    .map((s) => `• ${shortLesson(s, zone)}`)
     .join('\n');
 }
 

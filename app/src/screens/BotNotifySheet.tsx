@@ -1,7 +1,7 @@
 import { Send } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
 import { sendBot, useBot, useBotResult, type SendSummary } from '../data/bot';
-import { BUILT_IN, dayPhrase, lessonLines, ownTemplates, periodPhrase, PLACEHOLDERS, renderBot, templateText, timePhrase, type BotValues } from '../data/botText';
+import { BUILT_IN, dayPhrase, lessonLines, ownTemplates, periodPhrase, PLACEHOLDERS, renderBot, shortLesson, templateText, timePhrase, type BotValues } from '../data/botText';
 import { todayKey } from '../lib/dates';
 import { useData } from '../data/store';
 import { teacherById, teacherOf } from '../data/teachers';
@@ -26,6 +26,8 @@ export interface NotifyRequest {
   from?: string;
   to?: string;
   reason?: string;
+  /** where the lesson was before it moved ('move') */
+  was?: string;
 }
 
 interface Family {
@@ -227,9 +229,9 @@ function familiesFor(req: NotifyRequest, d: ReturnType<typeof useData.getState>)
 
   const lessons = (req.lessonIds ?? []).map((id) => d.lessons[id]).filter((l): l is Lesson => !!l && !l.deletedAt);
 
-  if (req.mode === 'cancel') {
+  if (req.mode === 'cancel' || req.mode === 'move') {
     for (const l of lessons) {
-      const reason = req.reason ?? l.cancel?.reason ?? '';
+      const reason = req.reason ?? (req.mode === 'move' ? (l.moves[l.moves.length - 1]?.reason ?? '') : (l.cancel?.reason ?? ''));
       for (const p of l.participants) {
         const st = live(p.studentId);
         if (!st || out.some((f) => f.student.id === st.id)) continue;
@@ -241,6 +243,7 @@ function familiesFor(req: NotifyRequest, d: ReturnType<typeof useData.getState>)
             time: timePhrase(l.start, st.timezone),
             teacher: teacherName(l),
             reason: lowerFirst(reason),
+            was: req.was ? shortLesson(req.was, st.timezone) : '',
           },
         });
       }

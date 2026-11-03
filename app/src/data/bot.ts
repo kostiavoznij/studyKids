@@ -213,7 +213,7 @@ export interface HistoryItem {
   kind: string;
   chatId: number;
   text: string;
-  status: 'sent' | 'blocked' | 'failed';
+  status: 'sent' | 'blocked' | 'failed' | 'received';
   error: string;
   sentBy: string;
 }
@@ -244,8 +244,39 @@ export function studentsOfLessons(lessonIds: ID[]): ID[] {
  * and at least one of the families has it. Otherwise nothing happens, so a
  * cancellation never turns into extra steps.
  */
-export function offerNotify(o: { mode: BotKind; lessonIds: ID[]; from?: string; to?: string; reason?: string }) {
+export function offerNotify(o: { mode: BotKind; lessonIds: ID[]; from?: string; to?: string; reason?: string; was?: string }) {
   if (!botReady(useBot.getState()) || o.lessonIds.length === 0) return;
   if (!anyConnected(studentsOfLessons(o.lessonIds))) return;
   useUi.getState().open({ kind: 'botNotify', ...o });
+}
+
+/* ---------- replies from families ---------- */
+
+/** A Telegram that receives what families write to the bot (step 4). */
+export interface InboxChat {
+  chatId: number;
+  email: string;
+  name: string;
+  username: string;
+  linkedAt: string;
+}
+
+export async function inboxList(): Promise<InboxChat[]> {
+  const { data, error } = await cloud().rpc('bot_inbox_list');
+  if (error) throw new Error(await reason(error));
+  return (data ?? []) as InboxChat[];
+}
+
+/** The signed-in person's own link to connect their Telegram as an inbox. */
+export async function inboxLink(renew = false): Promise<string> {
+  const username = useBot.getState().status?.username;
+  if (!username) throw new Error('Бот ще не підключений');
+  const { data, error } = await cloud().rpc('bot_inbox_code', { renew });
+  if (error) throw new Error(await reason(error));
+  return `https://t.me/${username}?start=${data as string}`;
+}
+
+export async function inboxUnlink(chatId: number) {
+  const { error } = await cloud().rpc('bot_inbox_unlink', { chat: chatId });
+  if (error) throw new Error(await reason(error));
 }

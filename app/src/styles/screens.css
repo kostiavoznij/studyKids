@@ -2286,3 +2286,7 @@
   border: 1px solid var(--border);
   border-radius: 14px;
 }
+
+.bot-history-item[data-status='received'] > svg {
+  color: var(--accent);
+}

@@ -25,6 +25,7 @@ export {
   PLACEHOLDERS,
   reminderLabel,
   renderBot,
+  shortLesson,
   timePhrase,
   type BotValues,
   type ReminderSchedule,
@@ -40,6 +41,11 @@ export const BUILT_IN: Record<Exclude<BotKind, 'free'>, { name: string; text: st
     name: 'Кілька днів без уроків',
     text: DEFAULT_TEXT.cancelMany,
     when: 'Пропонується, коли ви позначаєте вихідний, лікарняний чи відпустку.',
+  },
+  move: {
+    name: 'Урок перенесено',
+    text: DEFAULT_TEXT.move,
+    when: 'Пропонується, коли ви переносите урок на інший час.',
   },
   reminder: {
     name: 'Нагадування перед уроком',

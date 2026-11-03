@@ -1,4 +1,4 @@
-import { CircleAlert, CircleCheck, Copy, MessageSquareText, RefreshCw, Send, X } from 'lucide-react';
+import { CircleAlert, CircleCheck, Copy, CornerDownLeft, CornerUpRight, MessageSquareText, RefreshCw, Send, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { botHistory, chatLabel, chatsOf, inviteLink, inviteText, refreshBot, unlinkChat, useBot, type BotChat, type HistoryItem } from '../data/bot';
 import type { Student } from '../data/types';
@@ -209,10 +209,19 @@ export function StudentBotSheet({ student, onClose, onWrite }: { student: Studen
           <span className="field-label">Останні повідомлення</span>
           {history.slice(0, 5).map((h, i) => (
             <div key={i} className="bot-history-item" data-status={h.status}>
-              {h.status === 'sent' ? <CircleCheck size={15} /> : <CircleAlert size={15} />}
+              {h.status === 'received' ? (
+                <CornerDownLeft size={15} />
+              ) : h.kind === 'answer' && h.status === 'sent' ? (
+                <CornerUpRight size={15} />
+              ) : h.status === 'sent' ? (
+                <CircleCheck size={15} />
+              ) : (
+                <CircleAlert size={15} />
+              )}
               <div>
                 <div className="faint">
                   {fmt(h.at.slice(0, 10), 'd MMMM')}, {new Date(h.at).toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' })}
+                  {h.status === 'received' ? ` · від батьків${h.sentBy ? ` (${h.sentBy})` : ''}` : h.kind === 'answer' ? ' · ваша відповідь' : h.kind === 'reminder' ? ' · нагадування' : ''}
                   {h.status === 'blocked' ? ' · заблокував бота' : h.status === 'failed' ? ' · не дійшло' : ''}
                 </div>
                 <div className="bot-history-text">{h.text}</div>

@@ -585,6 +585,8 @@ function MoveStep({ lesson, onDone }: { lesson: Lesson; onDone: () => void }) {
     moveLesson(lesson.id, to, by, reason.trim(), duration);
     notify(`Перенесено на ${shortDay(to)} о ${time}`, () => putLesson(before));
     onDone();
+    // The new time is worth confirming to the family, whoever asked for it.
+    if (to > nowStamp()) offerNotify({ mode: 'move', lessonIds: [lesson.id], was: lesson.start });
   };
 
   return (

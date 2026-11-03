@@ -4,6 +4,7 @@ import { useAccess } from '../data/access';
 import { refreshBot, setupBot, useBot } from '../data/bot';
 import { BUILT_IN, ownTemplates } from '../data/botText';
 import { BotReminders } from './BotReminders';
+import { BotInbox } from './BotInbox';
 import { useData } from '../data/store';
 import { useLiveStudents } from '../data/selectors';
 import { useUi } from '../ui/uiStore';
@@ -93,9 +94,12 @@ export function BotSection() {
       <h3 className="bot-subtitle">Нагадування</h3>
       <BotReminders />
 
+      <h3 className="bot-subtitle">Відповіді батьків</h3>
+      <BotInbox />
+
       <h3 className="bot-subtitle">Шаблони повідомлень</h3>
       <div className="list">
-        {(['cancel', 'cancelMany'] as const).map((k) => (
+        {(['cancel', 'cancelMany', 'move'] as const).map((k) => (
           <button key={k} className="list-item" onClick={() => open({ kind: 'botTemplate', templateKind: k })}>
             <div className="list-main">
               <div className="list-title">{BUILT_IN[k].name}</div>

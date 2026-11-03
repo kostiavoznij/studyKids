@@ -13,7 +13,7 @@ export type Overlay =
   | { kind: 'bank'; month: string }
   | { kind: 'teacher'; id?: ID }
   | { kind: 'payout'; id?: ID; teacherId?: ID }
-  | { kind: 'botNotify'; mode: BotKind; lessonIds?: ID[]; studentIds?: ID[]; from?: string; to?: string; reason?: string }
+  | { kind: 'botNotify'; mode: BotKind; lessonIds?: ID[]; studentIds?: ID[]; from?: string; to?: string; reason?: string; was?: string }
   | { kind: 'botTemplate'; id?: ID; templateKind: BotKind };
 
 interface Toast {
