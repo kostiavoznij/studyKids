@@ -280,3 +280,51 @@ export async function inboxUnlink(chatId: number) {
   const { error } = await cloud().rpc('bot_inbox_unlink', { chat: chatId });
   if (error) throw new Error(await reason(error));
 }
+
+/* ---------- passing a text on ---------- */
+
+/** On a phone the share sheet goes straight to Viber or Telegram; on a computer copying is simpler. */
+const canShare = () => typeof navigator.share === 'function' && window.matchMedia('(pointer: coarse)').matches;
+
+const copyText = (text: string) =>
+  navigator.clipboard.writeText(text).then(
+    () => 'copied' as const,
+    () => 'failed' as const,
+  );
+
+/**
+ * Opens the share sheet, or copies on a computer. Call it straight from a tap,
+ * with the text ready: an iPhone refuses both once the tap has waited for the
+ * network.
+ */
+export function shareOrCopy(text: string): Promise<'shared' | 'copied' | 'cancelled' | 'failed'> {
+  if (canShare()) {
+    return navigator.share({ text }).then(
+      () => 'shared' as const,
+      (e) => ((e as DOMException)?.name === 'AbortError' ? ('cancelled' as const) : copyText(text)),
+    );
+  }
+  return copyText(text);
+}
+
+/** Which families she has sent an invitation to, on this device: student id → 'yyyy-MM-dd'. */
+const INVITED = 'uroky-bot-invited';
+
+export function invitedOn(): Record<ID, string> {
+  try {
+    const v = JSON.parse(localStorage.getItem(INVITED) ?? '{}');
+    return v && typeof v === 'object' ? v : {};
+  } catch {
+    return {};
+  }
+}
+
+export function markInvited(studentId: ID, day: string) {
+  const next = { ...invitedOn(), [studentId]: day };
+  try {
+    localStorage.setItem(INVITED, JSON.stringify(next));
+  } catch {
+    /* private window */
+  }
+  return next;
+}

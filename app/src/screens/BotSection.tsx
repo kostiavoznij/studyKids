@@ -67,8 +67,13 @@ export function BotSection() {
       {status.lastError && <p className="sync-error">Остання помилка доставки: {status.lastError}</p>}
 
       <p className="muted" style={{ fontSize: 14, margin: '12px 0' }}>
-        Запрошення для батьків — у картці кожного учня, кнопка «Запросити в бот». Батьки відкривають посилання й натискають «Почати».
+        Батьки підключаються самі: відкривають своє посилання й натискають «Почати». Надіслати посилання можна всім одразу тут або з картки учня.
       </p>
+      {status.connected && (
+        <button className="btn btn-primary btn-block" style={{ marginBottom: 4 }} onClick={() => open({ kind: 'botInvites' })}>
+          <Send size={17} /> Запросити батьків
+        </button>
+      )}
 
       <div className="bot-actions">
         {admin && !status.connected && (

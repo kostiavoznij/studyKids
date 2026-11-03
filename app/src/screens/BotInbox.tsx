@@ -16,7 +16,7 @@ export function BotInbox() {
   const username = useBot((s) => s.status?.username);
   const notify = useUi((s) => s.notify);
   const [list, setList] = useState<InboxChat[] | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [link, setLink] = useState<string>();
   const [problem, setProblem] = useState<string>();
 
   const load = useCallback(async () => {
@@ -36,18 +36,19 @@ export function BotInbox() {
     return () => document.removeEventListener('visibilitychange', onVisible);
   }, [load]);
 
-  const connect = async () => {
-    setBusy(true);
-    setProblem(undefined);
-    try {
-      const link = await inboxLink();
-      window.open(link, '_blank', 'noopener');
-    } catch (e) {
-      setProblem(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  };
+  const mine = list?.some((c) => c.email === me);
+
+  // A plain link, ready before the tap: an iPhone won't open Telegram from a tap that waited for the network.
+  useEffect(() => {
+    if (!username || mine !== false) return;
+    let alive = true;
+    inboxLink()
+      .then((l) => alive && setLink(l))
+      .catch((e) => alive && setProblem(e instanceof Error ? e.message : String(e)));
+    return () => {
+      alive = false;
+    };
+  }, [username, mine]);
 
   const unlink = async (c: InboxChat) => {
     const ok = await ask({
@@ -65,8 +66,6 @@ export function BotInbox() {
       setProblem(e instanceof Error ? e.message : String(e));
     }
   };
-
-  const mine = list?.some((c) => c.email === me);
 
   return (
     <div className="bot-inbox">
@@ -99,16 +98,16 @@ export function BotInbox() {
       {list && list.length === 0 && <p className="field-hint">Поки ніхто не отримує відповідей — бот каже батькам писати вчительці напряму.</p>}
 
       <div className="bot-actions">
-        {!mine && (
-          <button className="btn btn-soft" disabled={busy || !username} onClick={connect}>
+        {mine === false && (
+          <a className="btn btn-soft" href={link} target="_blank" rel="noreferrer" aria-disabled={!link} onClick={(e) => !link && e.preventDefault()}>
             <MessageCircleReply size={17} /> Отримувати в мій Telegram
-          </button>
+          </a>
         )}
         <button className="btn btn-ghost btn-sm" onClick={load}>
           <RefreshCw size={16} /> Оновити
         </button>
       </div>
-      {!mine && <p className="field-hint">Відкриється Telegram — натисніть там «Почати». Підключайте лише свій Telegram.</p>}
+      {mine === false && <p className="field-hint">Відкриється Telegram — натисніть там «Почати». Підключайте лише свій Telegram.</p>}
 
       {problem && <p className="sync-error">{problem}</p>}
     </div>

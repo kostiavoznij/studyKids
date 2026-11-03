@@ -14,7 +14,8 @@ export type Overlay =
   | { kind: 'teacher'; id?: ID }
   | { kind: 'payout'; id?: ID; teacherId?: ID }
   | { kind: 'botNotify'; mode: BotKind; lessonIds?: ID[]; studentIds?: ID[]; from?: string; to?: string; reason?: string; was?: string }
-  | { kind: 'botTemplate'; id?: ID; templateKind: BotKind };
+  | { kind: 'botTemplate'; id?: ID; templateKind: BotKind }
+  | { kind: 'botInvites' };
 
 interface Toast {
   id: number;

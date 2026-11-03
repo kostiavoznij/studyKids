@@ -2290,3 +2290,17 @@
 .bot-history-item[data-status='received'] > svg {
   color: var(--accent);
 }
+
+.bot-invites .list-item {
+  gap: 12px;
+}
+
+.bot-invite-done {
+  flex: none;
+  color: var(--good);
+}
+
+a.btn[aria-disabled='true'] {
+  opacity: 0.5;
+  pointer-events: none;
+}

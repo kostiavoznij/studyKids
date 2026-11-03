@@ -28,6 +28,7 @@ import { TeacherSheet } from './screens/TeacherSheet';
 import { TeacherStatsScreen } from './screens/TeacherStatsScreen';
 import { BotNotifySheet } from './screens/BotNotifySheet';
 import { BotTemplateSheet } from './screens/BotTemplateSheet';
+import { BotInviteSheet } from './screens/BotInviteSheet';
 import { BotResultHost } from './ui/BotResult';
 import { AccountChip, MeAvatar, PreviewBanner } from './ui/AccountChip';
 import { ConfirmHost, ToastHost, useNow } from './ui/components';
@@ -146,6 +147,8 @@ function OverlayHost() {
       return <BotNotifySheet req={overlay} onClose={close} />;
     case 'botTemplate':
       return <BotTemplateSheet key={overlay.id ?? overlay.templateKind} id={overlay.id} kind={overlay.templateKind} onClose={close} />;
+    case 'botInvites':
+      return <BotInviteSheet onClose={close} />;
   }
 }
 

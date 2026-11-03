@@ -1,8 +1,21 @@
 import { CircleAlert, CircleCheck, Copy, CornerDownLeft, CornerUpRight, MessageSquareText, RefreshCw, Send, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { botHistory, chatLabel, chatsOf, inviteLink, inviteText, refreshBot, unlinkChat, useBot, type BotChat, type HistoryItem } from '../data/bot';
+import {
+  botHistory,
+  chatLabel,
+  chatsOf,
+  inviteLink,
+  inviteText,
+  markInvited,
+  refreshBot,
+  shareOrCopy,
+  unlinkChat,
+  useBot,
+  type BotChat,
+  type HistoryItem,
+} from '../data/bot';
 import type { Student } from '../data/types';
-import { fmt } from '../lib/dates';
+import { fmt, todayKey } from '../lib/dates';
 import { Avatar, Sheet, Switch } from '../ui/components';
 import { reminderLabel, reminderSchedule } from '../data/botText';
 import { useData } from '../data/store';
@@ -14,18 +27,6 @@ import { ask, useUi } from '../ui/uiStore';
  * link to invite the rest. Sending the invitation is up to her — the app only
  * prepares the text, ready to paste where she already talks to the parents.
  */
-
-async function copy(text: string) {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** On a phone the share sheet goes straight to Viber or Telegram; on a computer copying is simpler. */
-const canShare = () => typeof navigator.share === 'function' && window.matchMedia('(pointer: coarse)').matches;
 
 export function StudentBotSheet({ student, onClose, onWrite }: { student: Student; onClose: () => void; onWrite: () => void }) {
   const { status, chats, loading, error } = useBot();
@@ -48,6 +49,19 @@ export function StudentBotSheet({ student, onClose, onWrite }: { student: Studen
       .catch(() => setHistory([]));
   }, [student.id]);
 
+  // The link is ready before any tap: sharing and copying must follow the tap at once.
+  const username = status?.username;
+  useEffect(() => {
+    if (!username) return;
+    let alive = true;
+    inviteLink(student.id)
+      .then((l) => alive && setLink(l))
+      .catch((e) => alive && setProblem(e instanceof Error ? e.message : String(e)));
+    return () => {
+      alive = false;
+    };
+  }, [student.id, username]);
+
   const getLink = async (renew = false) => {
     if (link && !renew) return link;
     setBusy(true);
@@ -64,24 +78,21 @@ export function StudentBotSheet({ student, onClose, onWrite }: { student: Studen
     }
   };
 
-  const invite = async () => {
-    const l = await getLink();
-    if (!l) return;
-    const text = inviteText(student.name, l);
-    if (canShare()) {
-      try {
-        await navigator.share({ text });
-        return;
-      } catch (e) {
-        if ((e as DOMException)?.name === 'AbortError') return;
-      }
-    }
-    notify((await copy(text)) ? 'Запрошення скопійовано — вставте його в чат з батьками' : 'Не вдалося скопіювати — виділіть посилання нижче');
+  const invite = () => {
+    if (!link) return;
+    shareOrCopy(inviteText(student.name, link)).then((r) => {
+      if (r === 'shared' || r === 'copied') markInvited(student.id, todayKey());
+      if (r === 'copied') notify('Запрошення скопійовано — вставте його в чат з батьками');
+      if (r === 'failed') notify('Не вдалося скопіювати — виділіть посилання нижче');
+    });
   };
 
-  const copyLink = async () => {
-    const l = await getLink();
-    if (l) notify((await copy(l)) ? 'Посилання скопійовано' : 'Не вдалося скопіювати — виділіть посилання нижче');
+  const copyLink = () => {
+    if (!link) return;
+    navigator.clipboard.writeText(link).then(
+      () => notify('Посилання скопійовано'),
+      () => notify('Не вдалося скопіювати — виділіть посилання нижче'),
+    );
   };
 
   const renew = async () => {
@@ -114,7 +125,7 @@ export function StudentBotSheet({ student, onClose, onWrite }: { student: Studen
       title="Telegram-бот"
       onClose={onClose}
       footer={
-        <button className="btn btn-primary" disabled={busy || !status?.username} onClick={invite}>
+        <button className="btn btn-primary" disabled={busy || !link} onClick={invite}>
           <Send size={18} /> {mine.length ? 'Запросити ще когось' : 'Надіслати запрошення'}
         </button>
       }
@@ -163,7 +174,7 @@ export function StudentBotSheet({ student, onClose, onWrite }: { student: Studen
       )}
 
       <div className="bot-actions">
-        <button className="btn btn-ghost btn-sm" disabled={busy || !status?.username} onClick={copyLink}>
+        <button className="btn btn-ghost btn-sm" disabled={busy || !link} onClick={copyLink}>
           <Copy size={16} /> Лише посилання
         </button>
         <button className="btn btn-ghost btn-sm" disabled={busy || !status?.username} onClick={renew}>
