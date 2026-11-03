@@ -90,7 +90,10 @@ export function StatsScreen() {
     <div className="screen">
       <div className="screen-inner">
         <div className="screen-head">
-          <h1>Статистика</h1>
+          <h1 style={{ flex: 1 }}>Статистика</h1>
+          <button className="link-btn" onClick={() => navigate('/stats/teachers')}>
+            По вчительках
+          </button>
         </div>
 
         <div className="stats-toolbar">

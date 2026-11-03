@@ -24,6 +24,7 @@ import { SyncBadge } from './screens/SyncSection';
 import { TaxPlanSheet } from './screens/TaxPlanSheet';
 import { TaxSheet } from './screens/TaxSheet';
 import { TeacherSheet } from './screens/TeacherSheet';
+import { TeacherStatsScreen } from './screens/TeacherStatsScreen';
 import { ConfirmHost, ToastHost, useNow } from './ui/components';
 import { useRoute } from './ui/router';
 import { useUi } from './ui/uiStore';
@@ -60,6 +61,7 @@ function Shell() {
   let screen;
   if (parts[0] === 'students' && parts[1]) screen = <StudentPage key={parts[1]} id={parts[1]} />;
   else if (parts[0] === 'students') screen = <StudentsScreen />;
+  else if (parts[0] === 'stats' && parts[1] === 'teachers' && access.manage) screen = <TeacherStatsScreen key={parts[2] ?? 'all'} teacherId={parts[2]} />;
   else if (parts[0] === 'stats' && access.manage) screen = <StatsScreen />;
   else if (parts[0] === 'finance' && access.finance) screen = <FinanceScreen />;
   else if (parts[0] === 'settings') screen = <SettingsScreen />;

@@ -3,7 +3,8 @@ import { cap, dayKey, dayOf, endStamp, fmt, inRange, isoWeekday, type Range } fr
 import { grade1, LESSONS, nPlural, plural } from '../lib/format';
 import { dayOffLabel } from './constants';
 import { isTrial, lessonEarned, lessonPlanned } from './money';
-import type { DayOff, DayOffKind, ID, Lesson, Payment, Student } from './types';
+import { teacherOf } from './teachers';
+import type { DayOff, DayOffKind, Group, ID, Lesson, Payment, Student } from './types';
 
 export interface Summary {
   total: number;
@@ -294,4 +295,82 @@ export function daysOffStats(daysOff: DayOff[], lessons: Lesson[], r: Range, wor
     byKind.set(d.kind, stat);
   }
   return order.map((k) => byKind.get(k)).filter((x): x is DayOffStat => !!x && (x.days > 0 || x.lessons > 0));
+}
+
+/* ---------- teachers ---------- */
+
+/** Hours of lessons that took place, trial ones too: that's the teacher's time as well. */
+export function hoursTaught(lessons: Lesson[], r: Range): number {
+  let min = 0;
+  for (const l of lessons) if (!l.deletedAt && l.status === 'done' && inRange(dayOf(l.start), r)) min += l.duration;
+  return min / 60;
+}
+
+/**
+ * Whose a payment is. Money for a group goes with the group's teacher, the rest
+ * with the student's current teacher, so every payment counts exactly once.
+ */
+export const paymentTeacher = (p: Payment, students: Record<ID, Student>, groups: Record<ID, Group>): ID =>
+  teacherOf((p.groupId ? groups[p.groupId] : students[p.studentId]) ?? {});
+
+/** The first day anything was recorded: periods before it have no data to compare with. */
+export function recordsStart(lessons: Lesson[]): string | null {
+  let first: string | null = null;
+  for (const l of lessons) if (!l.deletedAt && (!first || l.start < first)) first = l.start;
+  return first ? dayOf(first) : null;
+}
+
+/** One student as seen from one teacher's lessons within a period. */
+export interface PupilStat {
+  studentId: ID;
+  done: number;
+  planned: number;
+  cancelled: number;
+  /** what her lessons with this student earned */
+  earned: number;
+  expected: number;
+  /** price of the latest of these lessons */
+  price: number;
+  /** what the family paid within the period (all of it: payments aren't split by teacher) */
+  paid: number;
+  avgGrade: number | null;
+}
+
+/** The students in a teacher's lessons within a period, the ones she earns most on first. */
+export function pupilsOf(lessons: Lesson[], payments: Payment[], r: Range, now: string): PupilStat[] {
+  const ids = new Map<ID, number>();
+  for (const l of lessons) {
+    if (l.deletedAt || isTrial(l) || !inRange(dayOf(l.start), r)) continue;
+    for (const p of l.participants) ids.set(p.studentId, p.price);
+  }
+  return [...ids.entries()]
+    .map(([studentId, price]) => {
+      const x = summarize(lessons, r, now, studentId);
+      return {
+        studentId,
+        done: x.done,
+        planned: x.planned,
+        cancelled: x.cancelled,
+        earned: x.earned,
+        expected: x.expected,
+        price,
+        paid: received(payments, r, studentId).amount,
+        avgGrade: x.avgGrade,
+      };
+    })
+    .sort((a, b) => b.earned - a.earned || b.done - a.done);
+}
+
+/** Lessons still ahead within a period (by the calendar, so only as far as the schedule reaches) and what they'd earn. */
+export function ahead(lessons: Lesson[], r: Range, now: string) {
+  let count = 0;
+  let amount = 0;
+  let until = '';
+  for (const l of lessons) {
+    if (l.deletedAt || l.status !== 'planned' || !inRange(dayOf(l.start), r) || endStamp(l.start, l.duration) <= now) continue;
+    count++;
+    amount += lessonPlanned(l);
+    if (dayOf(l.start) > until) until = dayOf(l.start);
+  }
+  return { count, amount, until };
 }

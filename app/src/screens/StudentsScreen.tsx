@@ -208,9 +208,14 @@ function Teachers() {
     <>
       <div className="section-title">
         <h2>Вчительки</h2>
-        <button className="link-btn" onClick={() => open({ kind: 'teacher' })}>
-          + Вчителька
-        </button>
+        <span style={{ display: 'flex', gap: 16 }}>
+          <button className="link-btn" onClick={() => navigate('/stats/teachers')}>
+            Статистика
+          </button>
+          <button className="link-btn" onClick={() => open({ kind: 'teacher' })}>
+            + Вчителька
+          </button>
+        </span>
       </div>
       <div className="list">
         {teachers.map((t) => {
