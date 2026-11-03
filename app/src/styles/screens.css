@@ -2051,3 +2051,49 @@
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
 }
+
+/* ---------- Telegram bot ---------- */
+
+.sp-actions .sp-bot {
+  width: auto;
+  padding: 0 14px;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.sp-actions .sp-bot[data-on] {
+  color: var(--good);
+}
+
+.sc-bot {
+  margin-left: 6px;
+  vertical-align: -1px;
+  color: var(--accent);
+}
+
+.bot-chats .list-item {
+  gap: 12px;
+}
+
+.bot-refresh {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  margin-top: 10px;
+  font-size: 13px;
+}
+
+.bot-refresh .link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13.5px;
+}
+
+.bot-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}

@@ -9,6 +9,7 @@ import {
   Phone,
   Plus,
   Search,
+  Send,
   Sparkles,
   Trash2,
   Users,
@@ -18,6 +19,7 @@ import {
 import { useState } from 'react';
 import { useAccess } from '../data/access';
 import { accountLabel, useAccounts, type Account } from '../data/billing';
+import { chatsOf, useBot } from '../data/bot';
 import { TRIAL_OUTCOMES, zoneLabel } from '../data/constants';
 import { chargeOf, isTrial } from '../data/money';
 import {
@@ -54,6 +56,7 @@ import { ColumnChart, GradeLine, StackBar } from '../ui/charts';
 import { Avatar, Delta, Empty, GradeMini, Money, Segmented, StatusBadge, Tile, useNow } from '../ui/components';
 import { back, navigate } from '../ui/router';
 import { TeacherFilter } from '../ui/TeacherFilter';
+import { StudentBotSheet } from './StudentBotSheet';
 import { useUi } from '../ui/uiStore';
 
 /* ---------- List ---------- */
@@ -78,6 +81,7 @@ export function StudentsScreen() {
   const open = useUi((s) => s.open);
   const accounts = useAccounts();
   const now = useNow();
+  const bot = useBot();
   const [filter, setFilter] = useState<StudentStatus>('active');
   const [q, setQ] = useState('');
   const month = periodRange('month', new Date());
@@ -132,7 +136,12 @@ export function StudentsScreen() {
                 <button key={s.id} className="student-card rise" style={{ animationDelay: `${i * 25}ms` }} onClick={() => navigate(`/students/${s.id}`)}>
                   <Avatar name={s.name} color={s.color} size={48} />
                   <div className="sc-main">
-                    <div className="sc-name">{s.name}</div>
+                    <div className="sc-name">
+                      {s.name}
+                      {access.manage && bot.status?.configured && chatsOf(bot.chats, s.id).some((c) => !c.blocked) && (
+                        <Send size={13} className="sc-bot" aria-label="Батьки підключені до бота" />
+                      )}
+                    </div>
                     <div className="sc-sub">
                       {[s.subject, s.grade, many && !teacher ? teacherById(teachersRec, teacherOf(s)).name : ''].filter(Boolean).join(' · ')}
                     </div>
@@ -285,6 +294,8 @@ export function StudentPage({ id }: { id: string }) {
   const now = useNow();
   const [tab, setTab] = useState<Tab>('overview');
   const [filter, setFilter] = useState<LessonFilter>('all');
+  const bot = useBot();
+  const [botOpen, setBotOpen] = useState(false);
 
   if (!st || st.deletedAt) {
     return (
@@ -360,6 +371,11 @@ export function StudentPage({ id }: { id: string }) {
           {access.manage && (
             <button className="btn btn-primary" onClick={() => open({ kind: 'newLesson', studentId: id })}>
               <CalendarPlus size={18} /> Урок
+            </button>
+          )}
+          {access.manage && bot.status?.configured && (
+            <button className="btn btn-ghost sp-bot" onClick={() => setBotOpen(true)} data-on={chatsOf(bot.chats, id).some((x) => !x.blocked) ? '' : undefined}>
+              <Send size={17} /> {chatsOf(bot.chats, id).some((x) => !x.blocked) ? 'Бот підключено' : 'Запросити в бот'}
             </button>
           )}
           {c.telegram && (
@@ -438,6 +454,7 @@ export function StudentPage({ id }: { id: string }) {
           {tab === 'payments' && access.prices && account && <Payments st={st} account={account} />}
           {tab === 'notes' && <Notes st={st} />}
         </div>
+        {botOpen && <StudentBotSheet student={st} onClose={() => setBotOpen(false)} />}
       </div>
     </div>
   );

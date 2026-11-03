@@ -10,6 +10,7 @@ import { WhoCard } from '../ui/AccountChip';
 import { BillingPicker, DurationChips, PriceField } from '../ui/fields';
 import { ask, useUi } from '../ui/uiStore';
 import { AccountSection } from './AccountSection';
+import { BotSection } from './BotSection';
 import { MembersSection } from './MembersSection';
 import { SyncSection } from './SyncSection';
 import { useSync } from '../data/sync';
@@ -170,6 +171,7 @@ export function SettingsScreen() {
 
         <AccountSection />
         <MembersSection />
+        <BotSection />
         {!onAccount && <SyncSection />}
 
         {access.manage && <section className="section card">
